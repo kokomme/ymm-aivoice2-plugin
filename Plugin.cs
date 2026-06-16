@@ -10,12 +10,21 @@ namespace YmmAivoice2Plugin;
     ContentId  = "ymm-aivoice2-helper-v1")]
 public sealed class Aivoice2HelperPlugin : IToolPlugin
 {
-    readonly SettingsPanel _panel;
+    // WPFコントロールの生成はGetControls()呼び出し時まで遅延させる。
+    // コンストラクタはUIスレッド外から呼ばれる可能性があるため。
+    SettingsPanel? _panel;
 
-    public Aivoice2HelperPlugin()
+    SettingsPanel Panel
     {
-        _panel = new SettingsPanel();
-        _panel.OnExecute += OnExecute;
+        get
+        {
+            if (_panel is null)
+            {
+                _panel = new SettingsPanel();
+                _panel.OnExecute += OnExecute;
+            }
+            return _panel;
+        }
     }
 
     // --- IPlugin ---
@@ -41,7 +50,7 @@ public sealed class Aivoice2HelperPlugin : IToolPlugin
 
     public Type ViewType => typeof(SettingsPanel);
 
-    public UIElement[] GetControls() => new UIElement[] { _panel };
+    public UIElement[] GetControls() => new UIElement[] { Panel };
 
     public object[] GetToolBarGroups() => Array.Empty<object>();
 
@@ -49,6 +58,7 @@ public sealed class Aivoice2HelperPlugin : IToolPlugin
 
     void OnExecute(object? sender, EventArgs e)
     {
+        if (_panel is null) return;
         var settings = new PluginSettings
         {
             SilenceThresholdDb = _panel.SilenceThresholdDb,
