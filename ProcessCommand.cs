@@ -101,9 +101,12 @@ public static class ProcessCommand
         }
 
         log.AppendLine($"全アイテム: {totalItems}件 / WAV: {wavItems}件 / 対象: {entries.Count}件");
-        LastDiagLog = log.ToString().TrimEnd();
 
-        if (entries.Count == 0) return 0;
+        if (entries.Count == 0)
+        {
+            LastDiagLog = log.ToString().TrimEnd();
+            return 0;
+        }
 
         File.Copy(ymmpPath, ymmpPath + ".bak", overwrite: true);
 
@@ -120,6 +123,12 @@ public static class ProcessCommand
         }
 
         File.WriteAllText(ymmpPath, doc.ToJsonString(WriteOptions));
+
+        // 自動再読み込み前にログをファイルへ書き出す
+        LastDiagLog = log.ToString().TrimEnd();
+        var logPath = Path.ChangeExtension(ymmpPath, ".aivoice2helper.log");
+        try { File.WriteAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}]\n{LastDiagLog}\n"); }
+        catch { }
 
         AutoReloaded = false;
         try
