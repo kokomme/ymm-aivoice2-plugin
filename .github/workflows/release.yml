@@ -23,23 +23,6 @@ jobs:
       - name: Build
         run: dotnet build -c Release -r win-x64 --no-self-contained
 
-      - name: Find DLL
-        id: find_dll
-        shell: pwsh
-        run: |
-          $dll = Get-Item "bin/Release/net8.0-windows10.0.19041.0/win-x64/YmmAivoice2Plugin.dll"
-          echo "dll_path=$($dll.FullName)" >> $env:GITHUB_OUTPUT
-
-      - name: Create zip
-        shell: pwsh
-        run: |
-          $tag = "${{ github.ref_name }}"
-          $zipName = "YmmAivoice2Plugin-$tag.zip"
-          $dllPath = "${{ steps.find_dll.outputs.dll_path }}"
-          Compress-Archive -Path $dllPath -DestinationPath $zipName
-          echo "zip_name=$zipName" >> $env:GITHUB_OUTPUT
-        id: zip
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -47,21 +30,14 @@ jobs:
           body: |
             ## インストール方法
 
-            1. `YmmAivoice2Plugin-${{ github.ref_name }}.zip` をダウンロード
-            2. 解凍して `YmmAivoice2Plugin.dll` を取り出す
-            3. YMM4のインストールフォルダ内の `Plugins/` に新しいフォルダを作成:
-               ```
-               Plugins/
-               └── YmmAivoice2Helper/
-                   └── YmmAivoice2Plugin.dll   ← ここに置く
-               ```
-            4. YMM4を再起動
+            1. 下の `YmmAivoice2Plugin.dll` をダウンロード
+            2. YMM4のウィンドウにドラッグ&ドロップ
+            3. YMM4を再起動
 
-            ## 使い方
+            ## ファイル名形式
 
-            - AIVOICE2で書き出したWAVをYMM4のファイル監視で自動配置後、プラグインパネルの **「整理を実行」** ボタンを押す
-            - ファイル名形式: `000_キャラ名_セリフ10文字.wav`
-          files: ${{ steps.zip.outputs.zip_name }}
+            `000_キャラ名_セリフ10文字.wav`
+          files: bin/Release/net8.0-windows10.0.19041.0/win-x64/YmmAivoice2Plugin.dll
           draft: false
           prerelease: false
         env:

@@ -49,8 +49,8 @@ After:  [音声データ.......][余白50ms]    ✅
 ### ダウンロード＆インストール
 
 1. **[最新リリースのページ](https://github.com/kokomme/ymm-aivoice2-plugin/releases/latest)** を開く
-2. `YmmAivoice2Plugin-vX.X.X.zip` をダウンロード
-3. ZIPファイルを**YMM4のウィンドウにドラッグ&ドロップ**する
+2. `YmmAivoice2Plugin.dll` をダウンロード
+3. DLLファイルを**YMM4のウィンドウにドラッグ&ドロップ**する
 4. YMM4を再起動する
 
 ---
