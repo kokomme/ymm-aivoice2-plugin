@@ -4,6 +4,13 @@ public class Aivoice2HelperViewModel : INotifyPropertyChanged
 {
     public event PropertyChangedEventHandler? PropertyChanged;
 
+    bool _trimSilence = false;
+    public bool TrimSilence
+    {
+        get => _trimSilence;
+        set { _trimSilence = value; OnPropertyChanged(); }
+    }
+
     double _silenceThresholdDb = -60.0;
     public double SilenceThresholdDb
     {
@@ -36,16 +43,20 @@ public class Aivoice2HelperViewModel : INotifyPropertyChanged
         {
             var settings = new PluginSettings
             {
+                TrimSilence        = TrimSilence,
                 SilenceThresholdDb = SilenceThresholdDb,
-                TailMarginSec = TailMarginMs / 1000.0
+                TailMarginSec      = TailMarginMs / 1000.0
             };
             int count = ProcessCommand.Execute(settings);
             var diag = ProcessCommand.LastDiagLog;
+            var reloaded = ProcessCommand.AutoReloaded;
             ResultText = count switch
             {
                 < 0 => $"プロジェクトファイルが見つかりませんでした。\nYMM4でプロジェクトを開いて保存してください。\n[診断] {diag}",
                 0   => $"対象アイテムが見つかりませんでした。\n・プロジェクトを保存しましたか？\n・タイムラインにWAVは配置されていますか？\n[診断] {diag}",
-                _   => $"{count} 件を整理しました。\nYMM4でプロジェクトを再読み込みしてください。"
+                _   => reloaded
+                    ? $"{count} 件を整理しました。（YMM4に自動再読み込み済み）"
+                    : $"{count} 件を整理しました。\nYMM4でプロジェクトを再読み込みしてください。"
             };
         }
         catch (Exception ex)

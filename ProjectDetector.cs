@@ -106,6 +106,46 @@ static class ProjectDetector
         catch { return null; }
     }
 
+    public static bool TryReloadProject(string ymmpPath)
+    {
+        try
+        {
+            var (model, modelType) = GetMainModel();
+            if (model == null || modelType == null) return false;
+
+            // Look for any ICommand property that accepts a file path
+            string[] commandNames = ["OpenProjectCommand", "LoadProjectCommand", "OpenCommand", "OpenFileCommand", "ReloadCommand"];
+            foreach (var name in commandNames)
+            {
+                var prop = modelType.GetProperty(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                if (prop == null) continue;
+                var cmd = prop.GetValue(model);
+                if (cmd == null) continue;
+                var cmdType = cmd.GetType();
+                var canExec = cmdType.GetMethod("CanExecute");
+                var exec    = cmdType.GetMethod("Execute");
+                if (exec == null) continue;
+
+                object? arg = name == "ReloadCommand" ? null : (object?)ymmpPath;
+                bool canRun = canExec == null || (bool)(canExec.Invoke(cmd, [arg]) ?? false);
+                if (canRun) { exec.Invoke(cmd, [arg]); return true; }
+            }
+
+            // Fallback: try method directly
+            string[] methodNames = ["OpenProject", "LoadProject", "OpenFile"];
+            foreach (var name in methodNames)
+            {
+                var m = modelType.GetMethod(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                if (m == null) continue;
+                var parms = m.GetParameters();
+                if (parms.Length == 0) { m.Invoke(model, []); return true; }
+                if (parms.Length == 1 && parms[0].ParameterType == typeof(string)) { m.Invoke(model, [ymmpPath]); return true; }
+            }
+        }
+        catch { }
+        return false;
+    }
+
     static string? GetYmm4Dir()
     {
         try { return Path.GetDirectoryName(Process.GetCurrentProcess().MainModule?.FileName); }

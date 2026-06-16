@@ -4,7 +4,8 @@ public static class ProcessCommand
 {
     static readonly JsonSerializerOptions WriteOptions = new() { WriteIndented = true };
 
-    public static string LastDiagLog { get; private set; } = "";
+    public static string LastDiagLog  { get; private set; } = "";
+    public static bool   AutoReloaded { get; private set; } = false;
 
     public static int Execute(PluginSettings settings)
     {
@@ -82,10 +83,14 @@ public static class ProcessCommand
                     continue;
                 }
 
-                var trimmedSec = WavSilenceTrimmer.GetTrimmedDurationSec(
-                    parsed.FullPath,
-                    silenceThresholdDb: settings.SilenceThresholdDb,
-                    tailMarginSec: settings.TailMarginSec);
+                double trimmedSec;
+                if (settings.TrimSilence)
+                    trimmedSec = WavSilenceTrimmer.GetTrimmedDurationSec(
+                        parsed.FullPath,
+                        silenceThresholdDb: settings.SilenceThresholdDb,
+                        tailMarginSec: settings.TailMarginSec);
+                else
+                    trimmedSec = WavSilenceTrimmer.GetFullDurationSec(parsed.FullPath);
 
                 entries.Add((obj, parsed, trimmedSec));
             }
@@ -111,6 +116,16 @@ public static class ProcessCommand
         }
 
         File.WriteAllText(ymmpPath, doc.ToJsonString(WriteOptions));
+
+        AutoReloaded = false;
+        try
+        {
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher != null)
+                dispatcher.Invoke(() => { AutoReloaded = ProjectDetector.TryReloadProject(ymmpPath); });
+        }
+        catch { }
+
         return sorted.Count;
     }
 

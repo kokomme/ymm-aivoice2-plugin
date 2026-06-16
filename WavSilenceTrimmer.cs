@@ -139,6 +139,19 @@ public static class WavSilenceTrimmer
         return false;
     }
 
+    public static double GetFullDurationSec(string filePath)
+    {
+        try
+        {
+            using var fs = File.OpenRead(filePath);
+            if (!TryParseWavHeader(fs, out var sampleRate, out var channels, out var bitDepth, out var dataLength))
+                return GetFallbackDuration(filePath, sampleRate, channels, bitDepth);
+            int totalFrames = dataLength / (bitDepth / 8) / Math.Max(1, channels);
+            return totalFrames / (double)sampleRate;
+        }
+        catch { return GetFallbackDuration(filePath, 0, 0, 0); }
+    }
+
     static double GetFallbackDuration(string filePath, int sampleRate, int channels, int bitDepth)
     {
         if (sampleRate <= 0 || channels <= 0 || bitDepth <= 0) return 0.0;

@@ -7,46 +7,52 @@
 
         <TextBlock Text="AIVOICE2 Helper" FontWeight="Bold" FontSize="13" Margin="0,0,0,8"/>
 
-        <!-- 無音閾値 -->
-        <TextBlock Text="無音閾値 (dB)" Margin="0,0,0,2"/>
-        <Grid Margin="0,0,0,8">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="48"/>
-            </Grid.ColumnDefinitions>
-            <Slider Grid.Column="0"
-                    Minimum="-80" Maximum="-20"
-                    Value="{Binding SilenceThresholdDb, Mode=TwoWay}"
-                    TickFrequency="5"
-                    IsSnapToTickEnabled="True"
-                    VerticalAlignment="Center"/>
-            <TextBlock Grid.Column="1"
-                       Text="{Binding ThresholdText}"
-                       VerticalAlignment="Center"
-                       Margin="4,0,0,0"/>
-        </Grid>
+        <!-- 末尾無音カット ON/OFF -->
+        <CheckBox Content="末尾無音カットを有効にする"
+                  IsChecked="{Binding TrimSilence, Mode=TwoWay}"
+                  Margin="0,0,0,8"/>
 
-        <!-- 末尾マージン -->
-        <TextBlock Text="末尾マージン (ms)" Margin="0,0,0,2"/>
-        <Grid Margin="0,0,0,12">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="48"/>
-            </Grid.ColumnDefinitions>
-            <Slider Grid.Column="0"
-                    Minimum="0" Maximum="200"
-                    Value="{Binding TailMarginMs, Mode=TwoWay}"
-                    TickFrequency="10"
-                    IsSnapToTickEnabled="True"
-                    VerticalAlignment="Center"/>
-            <TextBlock Grid.Column="1"
-                       Text="{Binding MarginText}"
-                       VerticalAlignment="Center"
-                       Margin="4,0,0,0"/>
-        </Grid>
+        <!-- 無音閾値・マージン（TrimSilence が ON のときだけ有効） -->
+        <StackPanel IsEnabled="{Binding TrimSilence}">
+            <TextBlock Text="無音閾値 (dB)" Margin="0,0,0,2"/>
+            <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="48"/>
+                </Grid.ColumnDefinitions>
+                <Slider Grid.Column="0"
+                        Minimum="-80" Maximum="-20"
+                        Value="{Binding SilenceThresholdDb, Mode=TwoWay}"
+                        TickFrequency="5"
+                        IsSnapToTickEnabled="True"
+                        VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="1"
+                           Text="{Binding ThresholdText}"
+                           VerticalAlignment="Center"
+                           Margin="4,0,0,0"/>
+            </Grid>
+
+            <TextBlock Text="末尾マージン (ms)" Margin="0,0,0,2"/>
+            <Grid Margin="0,0,0,4">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="48"/>
+                </Grid.ColumnDefinitions>
+                <Slider Grid.Column="0"
+                        Minimum="0" Maximum="200"
+                        Value="{Binding TailMarginMs, Mode=TwoWay}"
+                        TickFrequency="10"
+                        IsSnapToTickEnabled="True"
+                        VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="1"
+                           Text="{Binding MarginText}"
+                           VerticalAlignment="Center"
+                           Margin="4,0,0,0"/>
+            </Grid>
+        </StackPanel>
 
         <!-- 実行ボタン -->
-        <Button Content="整理を実行"
+        <Button Content="整理を実行" Margin="0,8,0,0"
                 Command="{Binding ExecuteCommand}"
                 Padding="8,4"
                 HorizontalAlignment="Stretch"/>
