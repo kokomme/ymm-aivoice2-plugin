@@ -1,0 +1,14 @@
+# .NET ビルド成果物
+bin/
+obj/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+
+# Rider
+.idea/
+
+# Libs内のDLLはGit管理する（YMM4参照DLL）
+# ただし誤ってデプロイ用DLLが混入しないよう注意
