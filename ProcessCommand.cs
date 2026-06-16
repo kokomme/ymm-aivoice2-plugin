@@ -85,10 +85,14 @@ public static class ProcessCommand
 
                 double trimmedSec;
                 if (settings.TrimSilence)
-                    trimmedSec = WavSilenceTrimmer.GetTrimmedDurationSec(
+                {
+                    var (ts, fs2, wavDiag) = WavSilenceTrimmer.GetTrimmedDurationSecWithDiag(
                         parsed.FullPath,
                         silenceThresholdDb: settings.SilenceThresholdDb,
                         tailMarginSec: settings.TailMarginSec);
+                    trimmedSec = ts;
+                    if (diag || wavItems <= 3) log.AppendLine($"      [{wavItems}] {Path.GetFileName(parsed.FullPath)}: {wavDiag}");
+                }
                 else
                     trimmedSec = WavSilenceTrimmer.GetFullDurationSec(parsed.FullPath);
 

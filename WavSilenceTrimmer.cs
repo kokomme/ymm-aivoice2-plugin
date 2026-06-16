@@ -4,65 +4,83 @@ namespace YmmAivoice2Plugin;
 
 public static class WavSilenceTrimmer
 {
-    /// <summary>
-    /// WAVファイルを解析し、末尾無音を除いた再生時間(秒)を返す。
-    /// trae-video-helper/core/wav_processor.py の _wav_trim_duration() と同アルゴリズム。
-    /// </summary>
     public static double GetTrimmedDurationSec(
         string filePath,
-        double silenceThresholdDb = -40.0,
+        double silenceThresholdDb = -60.0,
+        double tailMarginSec = 0.05)
+        => GetTrimmedDurationSecWithDiag(filePath, silenceThresholdDb, tailMarginSec).TrimmedSec;
+
+    public static double GetFullDurationSec(string filePath)
+    {
+        try
+        {
+            using var fs = File.OpenRead(filePath);
+            if (!TryParseWavHeader(fs, out var sr, out var ch, out var bd, out var dl, out _))
+                return Fallback(filePath, sr, ch, bd);
+            return dl / (bd / 8.0) / Math.Max(1, ch) / sr;
+        }
+        catch { return 0.0; }
+    }
+
+    public static (double TrimmedSec, double FullSec, string Diag) GetTrimmedDurationSecWithDiag(
+        string filePath,
+        double silenceThresholdDb = -60.0,
         double tailMarginSec = 0.05)
     {
         try
         {
             using var fs = File.OpenRead(filePath);
-            if (!TryParseWavHeader(fs, out var sampleRate, out var channels, out var bitDepth, out var dataLength))
-                return GetFallbackDuration(filePath, sampleRate, channels, bitDepth);
+            if (!TryParseWavHeader(fs, out var sampleRate, out var channels, out var bitDepth, out var dataLength, out var audioFmt))
+            {
+                var fb = Fallback(filePath, sampleRate, channels, bitDepth);
+                return (fb, fb, $"ヘッダ解析失敗 sr={sampleRate} ch={channels} bit={bitDepth}");
+            }
 
+            double fullSec = dataLength / (bitDepth / 8.0) / Math.Max(1, channels) / sampleRate;
+
+            // Stream.Read は一度に全バイト読むことを保証しないためループで読む
             var data = new byte[dataLength];
-            int read = fs.Read(data, 0, dataLength);
+            int read = 0, n;
+            while (read < dataLength && (n = fs.Read(data, read, dataLength - read)) > 0)
+                read += n;
 
-            // Python版と同じサンプル単位スキャン（末尾から走査して最後の「音あり」サンプルを探す）
-            int lastActiveSample = FindLastActiveSample(data, read, bitDepth, silenceThresholdDb);
+            int lastActiveSample = FindLastActiveSample(data, read, bitDepth, audioFmt, silenceThresholdDb);
+            int lastActiveFrame  = lastActiveSample / Math.Max(1, channels);
+            int totalFrames      = (read / (bitDepth / 8)) / Math.Max(1, channels);
+            int marginFrames     = (int)(sampleRate * tailMarginSec);
+            int effectiveFrames  = Math.Min(lastActiveFrame + marginFrames, totalFrames);
+            double trimmedSec    = effectiveFrames / (double)sampleRate;
 
-            int lastActiveFrame = lastActiveSample / Math.Max(1, channels);
-            int totalFrames     = (read / (bitDepth / 8)) / Math.Max(1, channels);
-            int marginFrames    = (int)(sampleRate * tailMarginSec);
-            int effectiveFrames = Math.Min(lastActiveFrame + marginFrames, totalFrames);
+            string diag = $"fmt={audioFmt} sr={sampleRate} ch={channels} bit={bitDepth} " +
+                          $"data={dataLength}B read={read}B " +
+                          $"lastSmp={lastActiveSample}/{read / (bitDepth / 8)} " +
+                          $"full={fullSec:F2}s trim={trimmedSec:F2}s";
 
-            return effectiveFrames / (double)sampleRate;
+            return (trimmedSec, fullSec, diag);
         }
-        catch
+        catch (Exception ex)
         {
-            return GetFallbackDuration(filePath, 0, 0, 0);
+            return (0.0, 0.0, $"例外: {ex.Message}");
         }
     }
 
-    // 末尾から走査し、閾値を超えた最後のサンプルインデックスを返す
-    static int FindLastActiveSample(byte[] data, int byteCount, int bitDepth, double thresholdDb)
+    static int FindLastActiveSample(byte[] data, int byteCount, int bitDepth, int audioFmt, double thresholdDb)
     {
-        if (bitDepth == 16)
+        if (bitDepth == 16 && audioFmt == 1)
         {
-            // Python: threshold = 328 (= 0dBfs の 1% ≈ −40dB)
             short threshold = (short)Math.Clamp(Math.Pow(10.0, thresholdDb / 20.0) * 32767.0, 1, 32767);
             int sampleCount = byteCount / 2;
             for (int i = sampleCount - 1; i >= 0; i--)
-            {
                 if (Math.Abs(BinaryPrimitives.ReadInt16LittleEndian(data.AsSpan(i * 2, 2))) > threshold)
                     return i;
-            }
         }
-        else if (bitDepth == 8)
+        else if (bitDepth == 8 && audioFmt == 1)
         {
-            // Python: threshold = max(1, 328 >> 8) = 1
             int threshold = Math.Max(1, (int)(Math.Pow(10.0, thresholdDb / 20.0) * 127.0));
             for (int i = byteCount - 1; i >= 0; i--)
-            {
-                if (Math.Abs(data[i] - 128) > threshold)
-                    return i;
-            }
+                if (Math.Abs(data[i] - 128) > threshold) return i;
         }
-        else if (bitDepth == 24)
+        else if (bitDepth == 24 && audioFmt == 1)
         {
             int threshold = (int)(Math.Pow(10.0, thresholdDb / 20.0) * 8388607.0);
             int sampleCount = byteCount / 3;
@@ -75,26 +93,32 @@ public static class WavSilenceTrimmer
         }
         else if (bitDepth == 32)
         {
-            float threshold = (float)Math.Pow(10.0, thresholdDb / 20.0);
-            int sampleCount = byteCount / 4;
-            for (int i = sampleCount - 1; i >= 0; i--)
+            // audioFmt=3: IEEE float  /  audioFmt=1 32bit: integer PCM
+            if (audioFmt == 3)
             {
-                if (Math.Abs(BitConverter.ToSingle(data, i * 4)) > threshold)
-                    return i;
+                float threshold = (float)Math.Pow(10.0, thresholdDb / 20.0);
+                int sampleCount = byteCount / 4;
+                for (int i = sampleCount - 1; i >= 0; i--)
+                    if (Math.Abs(BitConverter.ToSingle(data, i * 4)) > threshold)
+                        return i;
+            }
+            else
+            {
+                int threshold = (int)(Math.Pow(10.0, thresholdDb / 20.0) * 2147483647.0);
+                int sampleCount = byteCount / 4;
+                for (int i = sampleCount - 1; i >= 0; i--)
+                    if (Math.Abs(BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(i * 4, 4))) > threshold)
+                        return i;
             }
         }
-
         return 0;
     }
 
     static bool TryParseWavHeader(
         Stream stream,
-        out int sampleRate,
-        out int channels,
-        out int bitDepth,
-        out int dataLength)
+        out int sampleRate, out int channels, out int bitDepth, out int dataLength, out int audioFmt)
     {
-        sampleRate = 0; channels = 0; bitDepth = 0; dataLength = 0;
+        sampleRate = 0; channels = 0; bitDepth = 0; dataLength = 0; audioFmt = 0;
 
         Span<byte> buf = stackalloc byte[44];
         if (stream.Read(buf) < 44) return false;
@@ -104,27 +128,32 @@ public static class WavSilenceTrimmer
         if (buf[12] != 'f' || buf[13] != 'm' || buf[14] != 't' || buf[15] != ' ') return false;
 
         int fmtSize = BinaryPrimitives.ReadInt32LittleEndian(buf[16..]);
+        audioFmt   = BinaryPrimitives.ReadInt16LittleEndian(buf[20..]);
         channels   = BinaryPrimitives.ReadInt16LittleEndian(buf[22..]);
         sampleRate = BinaryPrimitives.ReadInt32LittleEndian(buf[24..]);
         bitDepth   = BinaryPrimitives.ReadInt16LittleEndian(buf[34..]);
 
         if (channels <= 0 || sampleRate <= 0 || bitDepth is not (8 or 16 or 24 or 32)) return false;
+        if (audioFmt is not (1 or 3)) return false; // PCM or IEEE float のみ対応
 
         if (fmtSize == 16)
         {
-            // 標準44バイトWAV: buf[36..43] に "data" チャンクが含まれている
+            // 最適ケース: buf[36..43] に "data" チャンクが含まれる
             if (buf[36] == 'd' && buf[37] == 'a' && buf[38] == 't' && buf[39] == 'a')
             {
                 dataLength = BinaryPrimitives.ReadInt32LittleEndian(buf[40..]);
-                return dataLength > 0; // stream は位置44（PCMデータ先頭）にある
+                return dataLength > 0;
             }
+            // fact 等の追加チャンクがある場合: fmt チャンクの直後（offset 36）へ戻す
+            stream.Seek(36, SeekOrigin.Begin);
         }
         else
         {
+            // 拡張 fmt (cbSize あり): fmt データの末尾へシーク
             stream.Seek(20 + fmtSize, SeekOrigin.Begin);
         }
 
-        // "data" チャンクをストリームから検索（拡張fmtや追加チャンクがある場合）
+        // "data" チャンクをストリームから検索
         Span<byte> chunk = stackalloc byte[8];
         while (stream.Read(chunk) == 8)
         {
@@ -134,31 +163,19 @@ public static class WavSilenceTrimmer
                 dataLength = chunkSize;
                 return dataLength > 0;
             }
+            if (chunkSize < 0 || stream.Position + chunkSize > stream.Length) return false;
             stream.Seek(chunkSize, SeekOrigin.Current);
         }
         return false;
     }
 
-    public static double GetFullDurationSec(string filePath)
-    {
-        try
-        {
-            using var fs = File.OpenRead(filePath);
-            if (!TryParseWavHeader(fs, out var sampleRate, out var channels, out var bitDepth, out var dataLength))
-                return GetFallbackDuration(filePath, sampleRate, channels, bitDepth);
-            int totalFrames = dataLength / (bitDepth / 8) / Math.Max(1, channels);
-            return totalFrames / (double)sampleRate;
-        }
-        catch { return GetFallbackDuration(filePath, 0, 0, 0); }
-    }
-
-    static double GetFallbackDuration(string filePath, int sampleRate, int channels, int bitDepth)
+    static double Fallback(string filePath, int sampleRate, int channels, int bitDepth)
     {
         if (sampleRate <= 0 || channels <= 0 || bitDepth <= 0) return 0.0;
         try
         {
             long dataBytes = Math.Max(0, new FileInfo(filePath).Length - 44);
-            return dataBytes / (bitDepth / 8) / channels / (double)sampleRate;
+            return dataBytes / (bitDepth / 8.0) / channels / sampleRate;
         }
         catch { return 0.0; }
     }
