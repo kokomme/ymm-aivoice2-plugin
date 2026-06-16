@@ -1,66 +1,76 @@
 namespace YmmAivoice2Plugin;
 
-// [API要変更] このファイルのメソッドはすべて NotImplementedException を投げるプレースホルダです。
-// ymmapi.pages.dev でYMM4のタイムラインAPIを確認して実装してください。
 public static class ProcessCommand
 {
+    static readonly JsonSerializerOptions WriteOptions = new() { WriteIndented = true };
+
+    /// <summary>
+    /// 現在のYMM4プロジェクトを整理する。
+    /// 戻り値: 処理件数（-1 = プロジェクト未検出）
+    /// </summary>
     public static int Execute(PluginSettings settings)
     {
-        var voiceItems = CollectVoiceItems();
+        var ymmpPath = ProjectDetector.GetCurrentProjectPath();
+        if (ymmpPath == null) return -1;
 
-        if (voiceItems.Count == 0) return 0;
+        var json = File.ReadAllText(ymmpPath);
+        var doc  = JsonNode.Parse(json);
+        if (doc == null) return -1;
 
-        var entries = voiceItems
-            .Select(item => new
-            {
-                Item   = item,
-                Parsed = FilenameParser.TryParse(GetFilePath(item)),
-            })
-            .Where(x => x.Parsed is not null)
-            .Select(x => new
-            {
-                x.Item,
-                x.Parsed,
-                TrimmedSec = WavSilenceTrimmer.GetTrimmedDurationSec(
-                    x.Parsed!.FullPath,
-                    silenceThresholdDb: settings.SilenceThresholdDb,
-                    tailMarginSec: settings.TailMarginSec)
-            })
-            .OrderBy(x => x.Parsed!.Index)
-            .ToList();
+        double fps = doc["VideoInfo"]?["FPS"]?.GetValue<double>() ?? 30.0;
 
-        double fps = GetProjectFps();
+        // 対象ボイスアイテムを収集
+        var entries = new List<(JsonObject Item, ParsedVoiceFile Parsed, double TrimmedSec)>();
 
-        long cursor = 0;
-        foreach (var entry in entries)
+        var timelines = doc["Timelines"]?.AsArray();
+        if (timelines == null) return 0;
+
+        foreach (var timeline in timelines)
         {
-            long lengthFrames = (long)Math.Ceiling(entry.TrimmedSec * fps);
+            var items = timeline?["Items"]?.AsArray();
+            if (items == null) continue;
+
+            foreach (var item in items)
+            {
+                if (item is not JsonObject obj) continue;
+
+                var filePath = obj["FilePath"]?.GetValue<string>();
+                if (string.IsNullOrEmpty(filePath)) continue;
+                if (!filePath.EndsWith(".wav", StringComparison.OrdinalIgnoreCase)) continue;
+
+                var parsed = FilenameParser.TryParse(filePath);
+                if (parsed == null) continue;
+
+                if (!File.Exists(filePath)) continue;
+
+                var trimmedSec = WavSilenceTrimmer.GetTrimmedDurationSec(
+                    filePath,
+                    silenceThresholdDb: settings.SilenceThresholdDb,
+                    tailMarginSec: settings.TailMarginSec);
+
+                entries.Add((obj, parsed, trimmedSec));
+            }
+        }
+
+        if (entries.Count == 0) return 0;
+
+        // バックアップ
+        File.Copy(ymmpPath, ymmpPath + ".bak", overwrite: true);
+
+        // 連番順に開始フレームを詰めて配置
+        var sorted = entries.OrderBy(e => e.Parsed.Index).ToList();
+        long cursor = 0;
+        foreach (var (item, _, trimmedSec) in sorted)
+        {
+            long lengthFrames = (long)Math.Ceiling(trimmedSec * fps);
             if (lengthFrames <= 0) lengthFrames = 1;
-            SetItemFrame(entry.Item, cursor);
-            SetItemLength(entry.Item, lengthFrames);
+
+            item["Frame"]  = JsonValue.Create((int)cursor);
+            item["Length"] = JsonValue.Create((int)lengthFrames);
             cursor += lengthFrames;
         }
 
-        return entries.Count;
+        File.WriteAllText(ymmpPath, doc.ToJsonString(WriteOptions));
+        return sorted.Count;
     }
-
-    // [API要変更] タイムライン上の全レイヤーからボイスアイテムを収集する
-    static List<object> CollectVoiceItems()
-        => throw new NotImplementedException("CollectVoiceItems: ymmapi.pages.dev でタイムラインアイテム取得APIを確認して実装してください。");
-
-    // [API要変更] ボイスアイテムのWAVファイルパスを取得する
-    static string GetFilePath(object voiceItem)
-        => throw new NotImplementedException("GetFilePath: ymmapi.pages.dev でVoiceItemのFilePathプロパティを確認して実装してください。");
-
-    // [API要変更] プロジェクトのFPS（フレームレート）を取得する
-    static double GetProjectFps()
-        => throw new NotImplementedException("GetProjectFps: ymmapi.pages.dev でIProjectのFPSプロパティを確認して実装してください。");
-
-    // [API要変更] アイテムの開始フレームを設定する
-    static void SetItemFrame(object voiceItem, long frame)
-        => throw new NotImplementedException("SetItemFrame: ymmapi.pages.dev でVoiceItemのFrame設定方法を確認して実装してください。");
-
-    // [API要変更] アイテムの長さ（フレーム数）を設定する
-    static void SetItemLength(object voiceItem, long lengthFrames)
-        => throw new NotImplementedException("SetItemLength: ymmapi.pages.dev でVoiceItemのLength設定方法を確認して実装してください。");
 }

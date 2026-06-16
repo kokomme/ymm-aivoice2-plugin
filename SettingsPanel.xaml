@@ -14,17 +14,14 @@
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="48"/>
             </Grid.ColumnDefinitions>
-            <Slider x:Name="ThresholdSlider"
-                    Grid.Column="0"
+            <Slider Grid.Column="0"
                     Minimum="-60" Maximum="-10"
-                    Value="-40"
+                    Value="{Binding SilenceThresholdDb, Mode=TwoWay}"
                     TickFrequency="5"
                     IsSnapToTickEnabled="True"
-                    ValueChanged="ThresholdSlider_ValueChanged"
                     VerticalAlignment="Center"/>
-            <TextBlock x:Name="ThresholdLabel"
-                       Grid.Column="1"
-                       Text="-40 dB"
+            <TextBlock Grid.Column="1"
+                       Text="{Binding ThresholdText}"
                        VerticalAlignment="Center"
                        Margin="4,0,0,0"/>
         </Grid>
@@ -36,30 +33,26 @@
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="48"/>
             </Grid.ColumnDefinitions>
-            <Slider x:Name="MarginSlider"
-                    Grid.Column="0"
+            <Slider Grid.Column="0"
                     Minimum="0" Maximum="200"
-                    Value="50"
+                    Value="{Binding TailMarginMs, Mode=TwoWay}"
                     TickFrequency="10"
                     IsSnapToTickEnabled="True"
-                    ValueChanged="MarginSlider_ValueChanged"
                     VerticalAlignment="Center"/>
-            <TextBlock x:Name="MarginLabel"
-                       Grid.Column="1"
-                       Text="50 ms"
+            <TextBlock Grid.Column="1"
+                       Text="{Binding MarginText}"
                        VerticalAlignment="Center"
                        Margin="4,0,0,0"/>
         </Grid>
 
         <!-- 実行ボタン -->
         <Button Content="整理を実行"
-                x:Name="ExecuteButton"
+                Command="{Binding ExecuteCommand}"
                 Padding="8,4"
-                HorizontalAlignment="Stretch"
-                Click="ExecuteButton_Click"/>
+                HorizontalAlignment="Stretch"/>
 
         <!-- 結果表示 -->
-        <TextBlock x:Name="ResultLabel"
+        <TextBlock Text="{Binding ResultText}"
                    Margin="0,8,0,0"
                    TextWrapping="Wrap"
                    Foreground="#555"/>
