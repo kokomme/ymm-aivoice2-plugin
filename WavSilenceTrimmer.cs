@@ -64,51 +64,73 @@ public static class WavSilenceTrimmer
         }
     }
 
+    // 閾値はピーク振幅に対する相対比率 (thresholdDb は相対 dB)
+    // 例: ピーク=1300, -40dB → 1300 * 0.01 = 13 が実効閾値
+    // → 出力音量が低いTTSでも正しくスピーチ末尾を検出できる
     static int FindLastActiveSample(byte[] data, int byteCount, int bitDepth, int audioFmt, double thresholdDb)
     {
+        double ratio = Math.Pow(10.0, thresholdDb / 20.0);
+
         if (bitDepth == 16 && audioFmt == 1)
         {
-            short threshold = (short)Math.Clamp(Math.Pow(10.0, thresholdDb / 20.0) * 32767.0, 1, 32767);
             int sampleCount = byteCount / 2;
+            // 1パス目: ピーク振幅を求める
+            long peak = 0;
+            for (int i = 0; i < sampleCount; i++)
+            {
+                long v = Math.Abs((long)BinaryPrimitives.ReadInt16LittleEndian(data.AsSpan(i * 2, 2)));
+                if (v > peak) peak = v;
+            }
+            long threshold = Math.Max(1, (long)(peak * ratio));
+            // 2パス目: 末尾から走査
             for (int i = sampleCount - 1; i >= 0; i--)
-                if (Math.Abs(BinaryPrimitives.ReadInt16LittleEndian(data.AsSpan(i * 2, 2))) > threshold)
+                if (Math.Abs((long)BinaryPrimitives.ReadInt16LittleEndian(data.AsSpan(i * 2, 2))) > threshold)
                     return i;
         }
         else if (bitDepth == 8 && audioFmt == 1)
         {
-            int threshold = Math.Max(1, (int)(Math.Pow(10.0, thresholdDb / 20.0) * 127.0));
+            long peak = 0;
+            for (int i = 0; i < byteCount; i++) { long v = Math.Abs(data[i] - 128); if (v > peak) peak = v; }
+            long threshold = Math.Max(1, (long)(peak * ratio));
             for (int i = byteCount - 1; i >= 0; i--)
                 if (Math.Abs(data[i] - 128) > threshold) return i;
         }
         else if (bitDepth == 24 && audioFmt == 1)
         {
-            int threshold = (int)(Math.Pow(10.0, thresholdDb / 20.0) * 8388607.0);
             int sampleCount = byteCount / 3;
+            long peak = 0;
+            for (int i = 0; i < sampleCount; i++)
+            {
+                int raw = data[i*3] | (data[i*3+1] << 8) | (data[i*3+2] << 16);
+                if ((raw & 0x800000) != 0) raw |= unchecked((int)0xFF000000);
+                if (Math.Abs((long)raw) > peak) peak = Math.Abs((long)raw);
+            }
+            long threshold = Math.Max(1, (long)(peak * ratio));
             for (int i = sampleCount - 1; i >= 0; i--)
             {
                 int raw = data[i*3] | (data[i*3+1] << 8) | (data[i*3+2] << 16);
                 if ((raw & 0x800000) != 0) raw |= unchecked((int)0xFF000000);
-                if (Math.Abs(raw) > threshold) return i;
+                if (Math.Abs((long)raw) > threshold) return i;
             }
         }
         else if (bitDepth == 32)
         {
-            // audioFmt=3: IEEE float  /  audioFmt=1 32bit: integer PCM
+            int sampleCount = byteCount / 4;
             if (audioFmt == 3)
             {
-                float threshold = (float)Math.Pow(10.0, thresholdDb / 20.0);
-                int sampleCount = byteCount / 4;
+                float peak = 0;
+                for (int i = 0; i < sampleCount; i++) { float v = Math.Abs(BitConverter.ToSingle(data, i * 4)); if (v > peak) peak = v; }
+                float threshold = Math.Max(1e-9f, peak * (float)ratio);
                 for (int i = sampleCount - 1; i >= 0; i--)
-                    if (Math.Abs(BitConverter.ToSingle(data, i * 4)) > threshold)
-                        return i;
+                    if (Math.Abs(BitConverter.ToSingle(data, i * 4)) > threshold) return i;
             }
             else
             {
-                int threshold = (int)(Math.Pow(10.0, thresholdDb / 20.0) * 2147483647.0);
-                int sampleCount = byteCount / 4;
+                long peak = 0;
+                for (int i = 0; i < sampleCount; i++) { long v = Math.Abs((long)BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(i * 4, 4))); if (v > peak) peak = v; }
+                long threshold = Math.Max(1, (long)(peak * ratio));
                 for (int i = sampleCount - 1; i >= 0; i--)
-                    if (Math.Abs(BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(i * 4, 4))) > threshold)
-                        return i;
+                    if (Math.Abs((long)BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(i * 4, 4))) > threshold) return i;
             }
         }
         return 0;
