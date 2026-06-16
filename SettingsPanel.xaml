@@ -21,7 +21,7 @@
                     <ColumnDefinition Width="48"/>
                 </Grid.ColumnDefinitions>
                 <Slider Grid.Column="0"
-                        Minimum="-80" Maximum="-20"
+                        Minimum="-90" Maximum="-20"
                         Value="{Binding SilenceThresholdDb, Mode=TwoWay}"
                         TickFrequency="5"
                         IsSnapToTickEnabled="True"

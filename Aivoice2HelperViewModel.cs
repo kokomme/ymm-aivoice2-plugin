@@ -11,7 +11,7 @@ public class Aivoice2HelperViewModel : INotifyPropertyChanged
         set { _trimSilence = value; OnPropertyChanged(); }
     }
 
-    double _silenceThresholdDb = -40.0;
+    double _silenceThresholdDb = -80.0;
     public double SilenceThresholdDb
     {
         get => _silenceThresholdDb;
@@ -19,7 +19,7 @@ public class Aivoice2HelperViewModel : INotifyPropertyChanged
     }
     public string ThresholdText => $"{(int)SilenceThresholdDb} dB";
 
-    double _tailMarginMs = 300.0;
+    double _tailMarginMs = 100.0;
     public double TailMarginMs
     {
         get => _tailMarginMs;
