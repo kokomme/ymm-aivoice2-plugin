@@ -6,9 +6,8 @@ using System.Windows;
 namespace YmmAivoice2Plugin;
 
 [PluginDetails(
-    AuthorName  = "kokomme",
-    ContentId   = "ymm-aivoice2-helper-v1",
-    DisplayName = "AIVOICE2 Helper")]
+    AuthorName = "kokomme",
+    ContentId  = "ymm-aivoice2-helper-v1")]
 public sealed class Aivoice2HelperPlugin : IToolPlugin
 {
     readonly SettingsPanel _panel;

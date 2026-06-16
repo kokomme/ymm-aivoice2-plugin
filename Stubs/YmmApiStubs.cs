@@ -15,9 +15,8 @@ namespace YmmAivoice2Plugin.Stubs
     [AttributeUsage(AttributeTargets.Class)]
     public class PluginDetailsAttribute : Attribute
     {
-        public string AuthorName  { get; set; } = "";
-        public string ContentId   { get; set; } = "";
-        public string DisplayName { get; set; } = "";
+        public string AuthorName { get; set; } = "";
+        public string ContentId  { get; set; } = "";
     }
 
     public interface IPlugin
