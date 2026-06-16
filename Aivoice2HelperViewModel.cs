@@ -4,7 +4,7 @@ public class Aivoice2HelperViewModel : INotifyPropertyChanged
 {
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    double _silenceThresholdDb = -40.0;
+    double _silenceThresholdDb = -60.0;
     public double SilenceThresholdDb
     {
         get => _silenceThresholdDb;
