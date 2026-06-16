@@ -23,6 +23,13 @@ jobs:
       - name: Build
         run: dotnet build -c Release -r win-x64 --no-self-contained
 
+      - name: Create .ymme package
+        shell: pwsh
+        run: |
+          $dll = "bin/Release/net8.0-windows10.0.19041.0/win-x64/YmmAivoice2Plugin.dll"
+          Compress-Archive -Path $dll -DestinationPath "YmmAivoice2Plugin.zip"
+          Rename-Item "YmmAivoice2Plugin.zip" "YmmAivoice2Plugin.ymme"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -30,14 +37,14 @@ jobs:
           body: |
             ## インストール方法
 
-            1. 下の `YmmAivoice2Plugin.dll` をダウンロード
+            1. 下の `YmmAivoice2Plugin.ymme` をダウンロード
             2. YMM4のウィンドウにドラッグ&ドロップ
             3. YMM4を再起動
 
             ## ファイル名形式
 
             `000_キャラ名_セリフ10文字.wav`
-          files: bin/Release/net8.0-windows10.0.19041.0/win-x64/YmmAivoice2Plugin.dll
+          files: YmmAivoice2Plugin.ymme
           draft: false
           prerelease: false
         env:
