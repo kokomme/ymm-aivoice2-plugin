@@ -1,4 +1,3 @@
-using System.ComponentModel.Composition;
 #if YMM4_SDK
 using YukkuriMovieMaker.Plugin;
 #endif
@@ -13,9 +12,8 @@ namespace YmmAivoice2Plugin;
 /// 特に:
 ///   - Details プロパティの型名（YmmPluginDetails / PluginDetails 等）
 ///   - CreateSettingsControl() の戻り値の型
-///   - MEFエクスポート属性のインターフェース型
+///   - プラグイン登録に必要な属性（実DLLを参照してから追加する）
 /// </summary>
-[Export(typeof(IPlugin))]
 public sealed class Aivoice2HelperPlugin : IPlugin
 {
     readonly PluginSettings _settings = new();
