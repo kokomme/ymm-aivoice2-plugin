@@ -7,7 +7,7 @@
     <RootNamespace>YmmAivoice2Plugin</RootNamespace>
     <Nullable>enable</Nullable>
     <Platforms>x64</Platforms>
-    <ImplicitUsings>enable</ImplicitUsings>
+    <ImplicitUsings>disable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <!-- Libs/ に実DLLがある場合のみ YMM4_SDK を定義し、スタブを無効化する -->
     <DefineConstants Condition="Exists('Libs/YukkuriMovieMaker.Plugin.dll')">$(DefineConstants);YMM4_SDK</DefineConstants>
