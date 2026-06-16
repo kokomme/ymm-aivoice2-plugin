@@ -40,10 +40,11 @@ public class Aivoice2HelperViewModel : INotifyPropertyChanged
                 TailMarginSec = TailMarginMs / 1000.0
             };
             int count = ProcessCommand.Execute(settings);
+            var diag = ProcessCommand.LastDiagLog;
             ResultText = count switch
             {
-                < 0 => "プロジェクトファイルが見つかりませんでした。\nYMM4でプロジェクトを開いてください。",
-                0   => "対象アイテムが見つかりませんでした。\nファイル名が 000_キャラ名_セリフ.wav 形式か確認してください。",
+                < 0 => $"プロジェクトファイルが見つかりませんでした。\nYMM4でプロジェクトを開いて保存してください。\n[診断] {diag}",
+                0   => $"対象アイテムが見つかりませんでした。\n・プロジェクトを保存しましたか？\n・タイムラインにWAVは配置されていますか？\n[診断] {diag}",
                 _   => $"{count} 件を整理しました。\nYMM4でプロジェクトを再読み込みしてください。"
             };
         }
