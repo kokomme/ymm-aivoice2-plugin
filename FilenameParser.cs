@@ -10,23 +10,24 @@ public sealed record ParsedVoiceFile(
 
 public static class FilenameParser
 {
-    static readonly Regex Pattern =
-        new(@"^(\d{3})_([^_]+)_(.+)\.wav$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    // 先頭が3桁数字+アンダースコアなら対象（AIVOICE2連番形式）
+    static readonly Regex IndexPattern = new(@"^(\d{3,4})_", RegexOptions.Compiled);
 
     public static ParsedVoiceFile? TryParse(string filePath)
     {
-        // 日本語Windowsでは¥(U+00A5)がパス区切りとして使われる
-        // Path.GetFileName は U+00A5 を区切りと認識しないため正規化する
+        // 日本語Windows の ¥(U+00A5) をバックスラッシュ(U+005C)に正規化
         filePath = filePath.Replace('¥', '\\');
 
         var name = Path.GetFileName(filePath);
-        var m = Pattern.Match(name);
+        if (string.IsNullOrEmpty(name)) return null;
+
+        var m = IndexPattern.Match(name);
         if (!m.Success) return null;
 
         return new ParsedVoiceFile(
             Index: int.Parse(m.Groups[1].Value),
-            CharacterName: m.Groups[2].Value,
-            TextHint: m.Groups[3].Value,
+            CharacterName: "",
+            TextHint: name,
             FullPath: filePath);
     }
 

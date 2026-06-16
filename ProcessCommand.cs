@@ -66,6 +66,9 @@ public static class ProcessCommand
                 if (diag) log.AppendLine($"      WAV at '{keyPath}' = {filePath}");
 
                 var parsed = FilenameParser.TryParse(filePath);
+                // 文字コード診断 (パース失敗時の原因特定用)
+                var rawName = Path.GetFileName(filePath.Replace('¥', '\\')); 
+                if (diag) log.AppendLine($"      name={rawName} chars=[{string.Join(",", rawName.Take(8).Select(c => $"{(int)c:X4}"))}]");
                 if (parsed == null)
                 {
                     // パターン不一致の場合: ファイル名を表示して原因確認
