@@ -18,7 +18,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: "8.0.x"
+          dotnet-version: "10.0.x"
 
       - name: Build
         run: dotnet build -c Release -r win-x64 --no-self-contained
@@ -26,7 +26,7 @@ jobs:
       - name: Create .ymme package
         shell: pwsh
         run: |
-          $dll = "bin/Release/net8.0-windows10.0.19041.0/win-x64/YmmAivoice2Plugin.dll"
+          $dll = "bin/Release/net10.0-windows10.0.19041.0/win-x64/YmmAivoice2Plugin.dll"
           Compress-Archive -Path $dll -DestinationPath "YmmAivoice2Plugin.zip"
           Rename-Item "YmmAivoice2Plugin.zip" "YmmAivoice2Plugin.ymme"
 
