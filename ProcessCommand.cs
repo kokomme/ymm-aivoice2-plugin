@@ -37,27 +37,47 @@ public static class ProcessCommand
                 if (item is not JsonObject obj) continue;
                 totalItems++;
 
-                // 最初の3アイテムはタイプとキーを診断ログに出力
-                if (totalItems <= 3)
+                // --- 診断: 最初の3アイテムの詳細を出力 ---
+                bool diag = totalItems <= 3;
+                if (diag)
                 {
-                    var typeName = obj["$type"]?.GetValue<string>() ?? "(no $type)";
-                    var shortType = typeName.Split(',')[0].Split('.').LastOrDefault() ?? typeName;
-                    var topKeys = string.Join(", ", obj.Select(kv => kv.Key).Take(12));
-                    log.AppendLine($"  [{totalItems}] {shortType} keys={topKeys}");
+                    var allKeys = string.Join(", ", obj.Select(kv => kv.Key));
+                    log.AppendLine($"  [{totalItems}] keys={allKeys}");
+
+                    // Hatsuon の実際の値を表示
+                    var hatsuonRaw = obj["Hatsuon"]?.ToJsonString() ?? "(null)";
+                    var preview = hatsuonRaw.Length > 100 ? hatsuonRaw[..100] + "…" : hatsuonRaw;
+                    log.AppendLine($"      Hatsuon={preview}");
+
+                    // VoiceCache の値も表示
+                    var vcRaw = obj["VoiceCache"]?.ToJsonString() ?? "(null)";
+                    var vcPreview = vcRaw.Length > 100 ? vcRaw[..100] + "…" : vcRaw;
+                    log.AppendLine($"      VoiceCache={vcPreview}");
                 }
 
-                // item["FilePath"] だけでなく、ネスト内も含めて再帰検索
+                // WAVパスを再帰検索
                 var (filePath, keyPath) = FindWavPath(obj);
-                if (filePath == null) continue;
+                if (filePath == null)
+                {
+                    if (diag) log.AppendLine($"      → WAVパス見つからず");
+                    continue;
+                }
                 wavItems++;
-
-                if (totalItems <= 3)
-                    log.AppendLine($"      WAV at: {keyPath}");
+                if (diag) log.AppendLine($"      WAV at '{keyPath}' = {filePath}");
 
                 var parsed = FilenameParser.TryParse(filePath);
-                if (parsed == null) continue;
+                if (parsed == null)
+                {
+                    // パターン不一致の場合: ファイル名を表示して原因確認
+                    if (diag) log.AppendLine($"      → ファイル名パース失敗: {Path.GetFileName(filePath)}");
+                    continue;
+                }
 
-                if (!File.Exists(filePath)) continue;
+                if (!File.Exists(filePath))
+                {
+                    if (diag) log.AppendLine($"      → ファイル不存在: {filePath}");
+                    continue;
+                }
 
                 var trimmedSec = WavSilenceTrimmer.GetTrimmedDurationSec(
                     filePath,
