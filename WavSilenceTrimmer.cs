@@ -6,7 +6,7 @@ public static class WavSilenceTrimmer
 {
     /// <summary>
     /// WAVファイルを解析し、末尾無音を除いた再生時間(秒)を返す。
-    /// 解析できない場合はファイル全体の長さを返す。
+    /// trae-video-helper/core/wav_processor.py の _wav_trim_duration() と同アルゴリズム。
     /// </summary>
     public static double GetTrimmedDurationSec(
         string filePath,
@@ -22,25 +22,15 @@ public static class WavSilenceTrimmer
             var data = new byte[dataLength];
             int read = fs.Read(data, 0, dataLength);
 
-            // RMSウィンドウ方式で末尾無音を検出（20msウィンドウ）
-            double thresholdLinear = Math.Pow(10.0, silenceThresholdDb / 20.0);
-            int bytesPerSample = bitDepth / 8;
-            int windowSamples = Math.Max(1, (int)(sampleRate * 0.02)); // 20ms
-            int windowBytes = windowSamples * channels * bytesPerSample;
+            // Python版と同じサンプル単位スキャン（末尾から走査して最後の「音あり」サンプルを探す）
+            int lastActiveSample = FindLastActiveSample(data, read, bitDepth, silenceThresholdDb);
 
-            int lastActiveEnd = 0; // 音があった最後の位置（バイト単位）
+            int lastActiveFrame = lastActiveSample / Math.Max(1, channels);
+            int totalFrames     = (read / (bitDepth / 8)) / Math.Max(1, channels);
+            int marginFrames    = (int)(sampleRate * tailMarginSec);
+            int effectiveFrames = Math.Min(lastActiveFrame + marginFrames, totalFrames);
 
-            for (int offset = 0; offset + windowBytes <= read; offset += windowBytes)
-            {
-                double rms = CalcRms(data, offset, windowBytes, bitDepth);
-                if (rms > thresholdLinear)
-                    lastActiveEnd = offset + windowBytes;
-            }
-
-            int marginBytes = (int)(sampleRate * tailMarginSec) * channels * bytesPerSample;
-            int effectiveBytes = Math.Min(lastActiveEnd + marginBytes, read);
-            int totalSamplesPerChannel = effectiveBytes / bytesPerSample / Math.Max(1, channels);
-            return totalSamplesPerChannel / (double)sampleRate;
+            return effectiveFrames / (double)sampleRate;
         }
         catch
         {
@@ -48,43 +38,53 @@ public static class WavSilenceTrimmer
         }
     }
 
-    static double CalcRms(byte[] data, int offset, int length, int bitDepth)
+    // 末尾から走査し、閾値を超えた最後のサンプルインデックスを返す
+    static int FindLastActiveSample(byte[] data, int byteCount, int bitDepth, double thresholdDb)
     {
-        double sum = 0;
-        int count = 0;
-
         if (bitDepth == 16)
         {
-            for (int i = offset; i + 1 < offset + length && i + 1 < data.Length; i += 2)
+            // Python: threshold = 328 (= 0dBfs の 1% ≈ −40dB)
+            short threshold = (short)Math.Clamp(Math.Pow(10.0, thresholdDb / 20.0) * 32767.0, 1, 32767);
+            int sampleCount = byteCount / 2;
+            for (int i = sampleCount - 1; i >= 0; i--)
             {
-                double s = BinaryPrimitives.ReadInt16LittleEndian(data.AsSpan(i, 2)) / 32768.0;
-                sum += s * s;
-                count++;
+                if (Math.Abs(BinaryPrimitives.ReadInt16LittleEndian(data.AsSpan(i * 2, 2))) > threshold)
+                    return i;
+            }
+        }
+        else if (bitDepth == 8)
+        {
+            // Python: threshold = max(1, 328 >> 8) = 1
+            int threshold = Math.Max(1, (int)(Math.Pow(10.0, thresholdDb / 20.0) * 127.0));
+            for (int i = byteCount - 1; i >= 0; i--)
+            {
+                if (Math.Abs(data[i] - 128) > threshold)
+                    return i;
             }
         }
         else if (bitDepth == 24)
         {
-            for (int i = offset; i + 2 < offset + length && i + 2 < data.Length; i += 3)
+            int threshold = (int)(Math.Pow(10.0, thresholdDb / 20.0) * 8388607.0);
+            int sampleCount = byteCount / 3;
+            for (int i = sampleCount - 1; i >= 0; i--)
             {
-                int raw = data[i] | (data[i + 1] << 8) | (data[i + 2] << 16);
-                if ((raw & 0x800000) != 0) raw |= unchecked((int)0xFF000000); // 符号拡張
-                double s = raw / 8388608.0;
-                sum += s * s;
-                count++;
+                int raw = data[i*3] | (data[i*3+1] << 8) | (data[i*3+2] << 16);
+                if ((raw & 0x800000) != 0) raw |= unchecked((int)0xFF000000);
+                if (Math.Abs(raw) > threshold) return i;
             }
         }
         else if (bitDepth == 32)
         {
-            // 32bit float PCM
-            for (int i = offset; i + 3 < offset + length && i + 3 < data.Length; i += 4)
+            float threshold = (float)Math.Pow(10.0, thresholdDb / 20.0);
+            int sampleCount = byteCount / 4;
+            for (int i = sampleCount - 1; i >= 0; i--)
             {
-                double s = BitConverter.ToSingle(data, i);
-                sum += s * s;
-                count++;
+                if (Math.Abs(BitConverter.ToSingle(data, i * 4)) > threshold)
+                    return i;
             }
         }
 
-        return count == 0 ? 0.0 : Math.Sqrt(sum / count);
+        return 0;
     }
 
     static bool TryParseWavHeader(
@@ -108,26 +108,23 @@ public static class WavSilenceTrimmer
         sampleRate = BinaryPrimitives.ReadInt32LittleEndian(buf[24..]);
         bitDepth   = BinaryPrimitives.ReadInt16LittleEndian(buf[34..]);
 
-        if (channels <= 0 || sampleRate <= 0 || bitDepth is not (16 or 24 or 32)) return false;
+        if (channels <= 0 || sampleRate <= 0 || bitDepth is not (8 or 16 or 24 or 32)) return false;
 
         if (fmtSize == 16)
         {
-            // 標準44バイトWAV: 44バイト読み込み済みで buf[36..43] が "data" チャンク
+            // 標準44バイトWAV: buf[36..43] に "data" チャンクが含まれている
             if (buf[36] == 'd' && buf[37] == 'a' && buf[38] == 't' && buf[39] == 'a')
             {
                 dataLength = BinaryPrimitives.ReadInt32LittleEndian(buf[40..]);
-                // stream は既に位置 44 (PCMデータ先頭) にある
-                return dataLength > 0;
+                return dataLength > 0; // stream は位置44（PCMデータ先頭）にある
             }
-            // "data" が 36 バイト目にない場合はストリームを検索
         }
         else
         {
-            // 拡張 fmt チャンク: data チャンクの前に他のチャンクがある可能性
             stream.Seek(20 + fmtSize, SeekOrigin.Begin);
         }
 
-        // "data" チャンクをストリームから検索
+        // "data" チャンクをストリームから検索（拡張fmtや追加チャンクがある場合）
         Span<byte> chunk = stackalloc byte[8];
         while (stream.Read(chunk) == 8)
         {
@@ -147,11 +144,8 @@ public static class WavSilenceTrimmer
         if (sampleRate <= 0 || channels <= 0 || bitDepth <= 0) return 0.0;
         try
         {
-            long fileSize = new FileInfo(filePath).Length;
-            // WAVヘッダを除いたデータサイズから推定（最低44バイト）
-            long dataBytes = Math.Max(0, fileSize - 44);
-            long totalFrames = dataBytes / (bitDepth / 8) / channels;
-            return totalFrames / (double)sampleRate;
+            long dataBytes = Math.Max(0, new FileInfo(filePath).Length - 44);
+            return dataBytes / (bitDepth / 8) / channels / (double)sampleRate;
         }
         catch { return 0.0; }
     }
