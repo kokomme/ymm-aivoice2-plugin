@@ -9,16 +9,17 @@
     <Platforms>x64</Platforms>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
+    <!-- Libs/ に実DLLがある場合のみ YMM4_SDK を定義し、スタブを無効化する -->
+    <DefineConstants Condition="Exists('Libs/YukkuriMovieMaker.Plugin.dll')">$(DefineConstants);YMM4_SDK</DefineConstants>
   </PropertyGroup>
 
-  <ItemGroup>
-    <!--
-      YMM4のDLLをこのプロジェクトの Libs/ フォルダにコピーしてください。
-      YMM4インストール先 (例: C:\ゆっくりMovieMaker4) から以下をコピー:
-        YukkuriMovieMaker.Plugin.dll
-
-      Libs/ フォルダはGit管理されています。一度コピーすればCI/CDでも使えます。
-    -->
+  <!--
+    YMM4のDLLをこのプロジェクトの Libs/ フォルダにコピーしてください。
+    YMM4インストール先 (例: C:\ゆっくりMovieMaker4) から以下をコピー:
+      YukkuriMovieMaker.Plugin.dll
+    DLLがない場合は Stubs/YmmApiStubs.cs のスタブでコンパイルされます。
+  -->
+  <ItemGroup Condition="Exists('Libs/YukkuriMovieMaker.Plugin.dll')">
     <Reference Include="YukkuriMovieMaker.Plugin">
       <HintPath>Libs/YukkuriMovieMaker.Plugin.dll</HintPath>
       <Private>false</Private>
