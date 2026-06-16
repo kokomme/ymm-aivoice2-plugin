@@ -19,6 +19,11 @@
       YukkuriMovieMaker.Plugin.dll
     DLLがない場合は Stubs/YmmApiStubs.cs のスタブでコンパイルされます。
   -->
+  <ItemGroup>
+    <!-- MEF (Managed Extensibility Framework) — YMM4プラグイン読み込みに使用 -->
+    <PackageReference Include="System.ComponentModel.Composition" Version="8.0.0" />
+  </ItemGroup>
+
   <ItemGroup Condition="Exists('Libs/YukkuriMovieMaker.Plugin.dll')">
     <Reference Include="YukkuriMovieMaker.Plugin">
       <HintPath>Libs/YukkuriMovieMaker.Plugin.dll</HintPath>
