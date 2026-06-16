@@ -18,7 +18,8 @@ public static class FilenameParser
         // 日本語Windows の ¥(U+00A5) をバックスラッシュ(U+005C)に正規化
         filePath = filePath.Replace('¥', '\\');
 
-        var name = Path.GetFileName(filePath);
+        // AIVOICE2 がファイル名の先頭にスペースを付けて出力することがあるため Trim する
+        var name = Path.GetFileName(filePath).Trim();
         if (string.IsNullOrEmpty(name)) return null;
 
         var m = IndexPattern.Match(name);
