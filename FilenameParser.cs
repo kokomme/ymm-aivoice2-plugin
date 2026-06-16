@@ -2,10 +2,6 @@ using System.Text.RegularExpressions;
 
 namespace YmmAivoice2Plugin;
 
-/// <summary>
-/// AIVOICE2書き出しファイル名を解析する。
-/// 形式: 000_キャラ名_セリフ10文字.wav
-/// </summary>
 public sealed record ParsedVoiceFile(
     int Index,
     string CharacterName,
@@ -17,11 +13,12 @@ public static class FilenameParser
     static readonly Regex Pattern =
         new(@"^(\d{3})_([^_]+)_(.+)\.wav$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-    /// <summary>
-    /// ファイルパスを解析してParseVoiceFileを返す。マッチしない場合はnull。
-    /// </summary>
     public static ParsedVoiceFile? TryParse(string filePath)
     {
+        // 日本語Windowsでは¥(U+00A5)がパス区切りとして使われる
+        // Path.GetFileName は U+00A5 を区切りと認識しないため正規化する
+        filePath = filePath.Replace('¥', '\\');
+
         var name = Path.GetFileName(filePath);
         var m = Pattern.Match(name);
         if (!m.Success) return null;

@@ -73,14 +73,14 @@ public static class ProcessCommand
                     continue;
                 }
 
-                if (!File.Exists(filePath))
+                if (!File.Exists(parsed.FullPath))
                 {
-                    if (diag) log.AppendLine($"      → ファイル不存在: {filePath}");
+                    if (diag) log.AppendLine($"      → ファイル不存在: {parsed.FullPath}");
                     continue;
                 }
 
                 var trimmedSec = WavSilenceTrimmer.GetTrimmedDurationSec(
-                    filePath,
+                    parsed.FullPath,
                     silenceThresholdDb: settings.SilenceThresholdDb,
                     tailMarginSec: settings.TailMarginSec);
 
