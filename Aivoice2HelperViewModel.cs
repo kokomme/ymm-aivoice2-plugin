@@ -19,7 +19,7 @@ public class Aivoice2HelperViewModel : INotifyPropertyChanged
     }
     public string ThresholdText => $"{(int)SilenceThresholdDb} dB";
 
-    double _tailMarginMs = 50.0;
+    double _tailMarginMs = 300.0;
     public double TailMarginMs
     {
         get => _tailMarginMs;

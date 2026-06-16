@@ -54,7 +54,8 @@ public static class WavSilenceTrimmer
             string diag = $"fmt={audioFmt} sr={sampleRate} ch={channels} bit={bitDepth} " +
                           $"data={dataLength}B read={read}B " +
                           $"lastSmp={lastActiveSample}/{read / (bitDepth / 8)} " +
-                          $"full={fullSec:F2}s trim={trimmedSec:F2}s";
+                          $"full={fullSec:F2}s trim={trimmedSec:F2}s " +
+                          $"(thr={silenceThresholdDb}dB margin={tailMarginSec*1000:F0}ms)";
 
             return (trimmedSec, fullSec, diag);
         }
