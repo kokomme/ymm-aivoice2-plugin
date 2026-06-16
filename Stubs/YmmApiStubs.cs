@@ -1,8 +1,8 @@
 #if !YMM4_SDK
 // YukkuriMovieMaker.Plugin.dll が Libs/ に存在しない場合のコンパイル用スタブ。
-// 実際のYMM4 APIとは異なる可能性があります。
-// ProcessCommand.cs の [API要変更] 箇所を実装する際はこのファイルを参考にしてください。
-namespace YukkuriMovieMaker.Plugin
+// YukkuriMovieMaker.Plugin 名前空間とは別にして型衝突を避ける。
+// 実DLLを Libs/ に追加したら自動的にこのスタブは無効になる。
+namespace YmmAivoice2Plugin.Stubs
 {
     public interface IPlugin
     {

@@ -1,5 +1,7 @@
 using System.Windows.Controls;
+#if YMM4_SDK
 using YukkuriMovieMaker.Plugin;
+#endif
 
 namespace YmmAivoice2Plugin;
 
