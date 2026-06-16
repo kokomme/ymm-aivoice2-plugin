@@ -22,6 +22,7 @@ namespace YmmAivoice2Plugin.Stubs
 
     public interface IPlugin
     {
+        string Name { get; }
         PluginDetailsAttribute Details { get; }
         PluginType PluginType { get; }
         void Initialize();
@@ -31,10 +32,10 @@ namespace YmmAivoice2Plugin.Stubs
 
     public interface IToolPlugin : IPlugin
     {
+        Type ViewModelType { get; }
+        Type ViewType { get; }
         UIElement[] GetControls();
         object[]    GetToolBarGroups();
     }
-
-    public interface IProject { }
 }
 #endif

@@ -21,10 +21,14 @@ public sealed class Aivoice2HelperPlugin : IToolPlugin
 
     // --- IPlugin ---
 
+    public string Name => "AIVOICE2 Helper";
+
     public PluginDetailsAttribute Details =>
         (PluginDetailsAttribute)Attribute.GetCustomAttribute(GetType(), typeof(PluginDetailsAttribute))!;
 
+#if !YMM4_SDK
     public PluginType PluginType => PluginType.Tool;
+#endif
 
     public event EventHandler? CreateNewToolViewRequested;
 
@@ -34,20 +38,24 @@ public sealed class Aivoice2HelperPlugin : IToolPlugin
 
     // --- IToolPlugin ---
 
+    public Type ViewModelType => typeof(SettingsPanel);
+
+    public Type ViewType => typeof(SettingsPanel);
+
     public UIElement[] GetControls() => new UIElement[] { _panel };
 
     public object[] GetToolBarGroups() => Array.Empty<object>();
 
     // --- 実行ロジック ---
 
-    void OnExecute(object? sender, IProject project)
+    void OnExecute(object? sender, EventArgs e)
     {
         var settings = new PluginSettings
         {
             SilenceThresholdDb = _panel.SilenceThresholdDb,
             TailMarginSec      = _panel.TailMarginSec
         };
-        int count = ProcessCommand.Execute(project, settings);
+        int count = ProcessCommand.Execute(settings);
         _panel.ShowResult($"{count} 件のアイテムを整理しました。");
     }
 }
