@@ -92,6 +92,30 @@ public static class ProcessCommand
             cursor += frameCount;
         }
 
+        // プロジェクトの総フレーム数を確認・延長（VideoInfo の全フィールドをログ出力）
+        var videoInfo = doc["VideoInfo"]?.AsObject();
+        if (videoInfo != null)
+        {
+            log.AppendLine("[VideoInfo]");
+            foreach (var kv in videoInfo)
+                log.AppendLine($"  {kv.Key} = {kv.Value}");
+
+            // 総フレーム数フィールドを探して必要なら延長する
+            foreach (var fn in new[] { "TotalFrame", "Frame", "Duration", "TotalFrameCount", "Length" })
+            {
+                if (videoInfo[fn] is JsonValue fv && fv.TryGetValue<int>(out var total))
+                {
+                    log.AppendLine($"  → 総フレーム数フィールド: {fn} = {total}, cursor = {cursor}");
+                    if (cursor > total)
+                    {
+                        videoInfo[fn] = JsonValue.Create((int)cursor);
+                        log.AppendLine($"  → {fn} を {total} → {cursor} に延長");
+                    }
+                    break;
+                }
+            }
+        }
+
         File.WriteAllText(ymmpPath, doc.ToJsonString(WriteOptions));
 
         LastDiagLog = log.ToString().TrimEnd();
