@@ -4,29 +4,6 @@ public class Aivoice2HelperViewModel : INotifyPropertyChanged
 {
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    bool _trimSilence = false;
-    public bool TrimSilence
-    {
-        get => _trimSilence;
-        set { _trimSilence = value; OnPropertyChanged(); }
-    }
-
-    double _silenceThresholdDb = -60.0;
-    public double SilenceThresholdDb
-    {
-        get => _silenceThresholdDb;
-        set { _silenceThresholdDb = value; OnPropertyChanged(); OnPropertyChanged(nameof(ThresholdText)); }
-    }
-    public string ThresholdText => $"{(int)SilenceThresholdDb} dB";
-
-    double _tailMarginMs = 100.0;
-    public double TailMarginMs
-    {
-        get => _tailMarginMs;
-        set { _tailMarginMs = value; OnPropertyChanged(); OnPropertyChanged(nameof(MarginText)); }
-    }
-    public string MarginText => $"{(int)TailMarginMs} ms";
-
     string _resultText = "";
     public string ResultText
     {
@@ -41,13 +18,7 @@ public class Aivoice2HelperViewModel : INotifyPropertyChanged
         ResultText = "処理中...";
         try
         {
-            var settings = new PluginSettings
-            {
-                TrimSilence        = TrimSilence,
-                SilenceThresholdDb = SilenceThresholdDb,
-                TailMarginSec      = TailMarginMs / 1000.0
-            };
-            int count = ProcessCommand.Execute(settings);
+            int count = ProcessCommand.Execute();
             var diag = ProcessCommand.LastDiagLog;
             var reloaded = ProcessCommand.AutoReloaded;
             var diagBlock = string.IsNullOrEmpty(diag) ? "" : $"\n[診断]\n{diag}";

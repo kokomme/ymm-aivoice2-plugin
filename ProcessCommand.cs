@@ -7,7 +7,7 @@ public static class ProcessCommand
     public static string LastDiagLog  { get; private set; } = "";
     public static bool   AutoReloaded { get; private set; } = false;
 
-    public static int Execute(PluginSettings settings)
+    public static int Execute()
     {
         var log = new System.Text.StringBuilder();
 
@@ -19,16 +19,13 @@ public static class ProcessCommand
         var doc  = JsonNode.Parse(json);
         if (doc == null) { LastDiagLog = "JSONパース失敗"; return -1; }
 
-        double fps = doc["VideoInfo"]?["FPS"]?.GetValue<double>() ?? 30.0;
-        log.AppendLine($"FPS: {fps}");
-
-        // LengthFrames: OFF モードは JSON の元の Length、ON モードは WAV 解析で算出
-        var entries = new List<(JsonObject Item, ParsedVoiceFile Parsed, int LengthFrames)>();
-
         var timelines = doc["Timelines"]?.AsArray();
         if (timelines == null) { LastDiagLog = log + "Timelinesキーなし"; return 0; }
 
+        // 連番WAVアイテムを収集
+        var entries = new List<(JsonObject Item, int Index, int LengthFrames)>();
         int totalItems = 0, wavItems = 0;
+
         foreach (var timeline in timelines)
         {
             var items = timeline?["Items"]?.AsArray();
@@ -39,72 +36,28 @@ public static class ProcessCommand
                 if (item is not JsonObject obj) continue;
                 totalItems++;
 
-                // --- 診断: 最初の3アイテムの詳細を出力 ---
                 bool diag = totalItems <= 3;
                 if (diag)
                 {
-                    var allKeys = string.Join(", ", obj.Select(kv => kv.Key));
-                    log.AppendLine($"  [{totalItems}] keys={allKeys}");
-
-                    // Hatsuon の実際の値を表示
                     var hatsuonRaw = obj["Hatsuon"]?.ToJsonString() ?? "(null)";
-                    var preview = hatsuonRaw.Length > 100 ? hatsuonRaw[..100] + "…" : hatsuonRaw;
-                    log.AppendLine($"      Hatsuon={preview}");
-
-                    // VoiceCache の値も表示
-                    var vcRaw = obj["VoiceCache"]?.ToJsonString() ?? "(null)";
-                    var vcPreview = vcRaw.Length > 100 ? vcRaw[..100] + "…" : vcRaw;
-                    log.AppendLine($"      VoiceCache={vcPreview}");
+                    var preview = hatsuonRaw.Length > 120 ? hatsuonRaw[..120] + "…" : hatsuonRaw;
+                    log.AppendLine($"  [{totalItems}] Hatsuon={preview}");
                 }
 
-                // WAVパスを再帰検索
-                var (filePath, keyPath) = FindWavPath(obj);
-                if (filePath == null)
-                {
-                    if (diag) log.AppendLine($"      → WAVパス見つからず");
-                    continue;
-                }
+                var (filePath, _) = FindWavPath(obj);
+                if (filePath == null) { if (diag) log.AppendLine($"      → WAVパス見つからず"); continue; }
                 wavItems++;
-                if (diag) log.AppendLine($"      WAV at '{keyPath}' = {filePath}");
 
                 var parsed = FilenameParser.TryParse(filePath);
-                // 文字コード診断 (パース失敗時の原因特定用)
-                var rawName = Path.GetFileName(filePath.Replace('¥', '\\')); 
-                if (diag) log.AppendLine($"      name={rawName} chars=[{string.Join(",", rawName.Take(8).Select(c => $"{(int)c:X4}"))}]");
-                if (parsed == null)
-                {
-                    // パターン不一致の場合: ファイル名を表示して原因確認
-                    if (diag) log.AppendLine($"      → ファイル名パース失敗: {Path.GetFileName(filePath)}");
-                    continue;
-                }
+                if (parsed == null) { if (diag) log.AppendLine($"      → ファイル名パース失敗: {Path.GetFileName(filePath)}"); continue; }
 
-                if (!File.Exists(parsed.FullPath))
-                {
-                    if (diag) log.AppendLine($"      → ファイル不存在: {parsed.FullPath}");
-                    continue;
-                }
+                // YMM4 が設定した Length をそのまま使う（WAV再解析なし）
+                int origLen = obj["Length"]?.GetValue<int>() ?? 1;
+                if (origLen <= 0) origLen = 1;
 
-                int lengthFrames;
-                if (settings.TrimSilence)
-                {
-                    var (ts, _, wavDiag) = WavSilenceTrimmer.GetTrimmedDurationSecWithDiag(
-                        parsed.FullPath,
-                        silenceThresholdDb: settings.SilenceThresholdDb,
-                        tailMarginSec: settings.TailMarginSec);
-                    lengthFrames = (int)Math.Ceiling(ts * fps);
-                    if (lengthFrames <= 0) lengthFrames = 1;
-                    log.AppendLine($"      [{wavItems}] {Path.GetFileName(parsed.FullPath)}: {wavDiag} → {lengthFrames}fr");
-                }
-                else
-                {
-                    // OFF モード: YMM4 が監視配置時に設定した Length をそのまま使う
-                    // WAV を読み直さないため、長い音声でも正しく再生される
-                    lengthFrames = obj["Length"]?.GetValue<int>() ?? 1;
-                    if (lengthFrames <= 0) lengthFrames = 1;
-                    log.AppendLine($"      [{wavItems}] {Path.GetFileName(parsed.FullPath)}: origLen={lengthFrames}fr ({lengthFrames/fps:F2}s)");
-                }
+                if (diag) log.AppendLine($"      → {Path.GetFileName(filePath)} index={parsed.Index} len={origLen}fr");
 
-                entries.Add((obj, parsed, lengthFrames));
+                entries.Add((obj, parsed.Index, origLen));
             }
         }
 
@@ -118,20 +71,17 @@ public static class ProcessCommand
 
         File.Copy(ymmpPath, ymmpPath + ".bak", overwrite: true);
 
-        var sorted = entries.OrderBy(e => e.Parsed.Index).ToList();
+        // 連番順に並べ、Frame を累積配置
+        var sorted = entries.OrderBy(e => e.Index).ToList();
         long cursor = 0;
         foreach (var (item, _, frameCount) in sorted)
         {
             item["Frame"] = JsonValue.Create((int)cursor);
-            // ON モードのみ Length を更新（OFF は YMM4 の元の値を保持）
-            if (settings.TrimSilence)
-                item["Length"] = JsonValue.Create(frameCount);
             cursor += frameCount;
         }
 
         File.WriteAllText(ymmpPath, doc.ToJsonString(WriteOptions));
 
-        // 自動再読み込み前にログをファイルへ書き出す
         LastDiagLog = log.ToString().TrimEnd();
         var logPath = Path.ChangeExtension(ymmpPath, ".aivoice2helper.log");
         try { File.WriteAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}]\n{LastDiagLog}\n"); }
@@ -149,7 +99,6 @@ public static class ProcessCommand
         return sorted.Count;
     }
 
-    // JsonObject/Array を再帰走査し、.wav で終わる最初の文字列値を返す
     static (string? Path, string KeyPath) FindWavPath(JsonNode node, string prefix = "")
     {
         if (node is JsonObject obj)
