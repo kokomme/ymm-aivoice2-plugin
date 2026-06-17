@@ -7,7 +7,7 @@ public static class ProcessCommand
     public static string LastDiagLog  { get; private set; } = "";
     public static bool   AutoReloaded { get; private set; } = false;
 
-    public static int Execute(PluginSettings settings)
+    public static int Execute()
     {
         var log = new System.Text.StringBuilder();
 
@@ -22,13 +22,11 @@ public static class ProcessCommand
         var timelines = doc["Timelines"]?.AsArray();
         if (timelines == null) { LastDiagLog = "Timelinesキーなし"; return 0; }
 
-        // アイテムのVoiceLength+AdditionalTime+Lengthから内部FPSを検出
         double internalFps = DetectInternalFps(timelines, out string fpsDiag);
-        log.AppendLine($"内部FPS: {internalFps} ({fpsDiag}) / 末尾カット: {settings.TailCutSec:F1}s");
+        log.AppendLine($"内部FPS: {internalFps} ({fpsDiag})");
 
         // WAVパス → 全JsonObjectのリスト (重複タイムライン対応)
         var wavToObjs = new Dictionary<string, List<JsonObject>>(StringComparer.OrdinalIgnoreCase);
-        // 順序計算用: WAVパスを初見順に1件だけ登録
         var entries   = new List<(string WavPath, int Index, int LengthFrames)>();
         int totalItems = 0, wavItems = 0;
 
@@ -46,13 +44,11 @@ public static class ProcessCommand
                 if (filePath == null) continue;
                 wavItems++;
 
-                // 全コピーを記録 (重複対応)
                 if (!wavToObjs.TryGetValue(filePath, out var objList))
                     wavToObjs[filePath] = objList = new List<JsonObject>();
                 objList.Add(obj);
 
-                // 初見のみ順序リストに追加
-                if (objList.Count > 1) continue;
+                if (objList.Count > 1) continue; // 重複は後でまとめて更新
 
                 var parsed = FilenameParser.TryParse(filePath);
                 if (parsed == null)
@@ -61,12 +57,8 @@ public static class ProcessCommand
                     continue;
                 }
 
-                // VoiceLength + AdditionalTime から正しいフレーム数を算出
-                // (VoiceLength/AdditionalTimeは本プラグインが変更しないため常に正確)
-                int newLength = ComputeLength(obj, settings.TailCutSec, internalFps,
-                                              out string lenDiag);
+                int newLength = ComputeLength(obj, internalFps, out string lenDiag);
                 log.AppendLine($"  [{entries.Count + 1}] {Path.GetFileName(parsed.FullPath)}: {lenDiag}");
-
                 entries.Add((filePath, parsed.Index, newLength));
             }
         }
@@ -74,15 +66,13 @@ public static class ProcessCommand
         int uniqueWav = wavToObjs.Count;
         int dupObjs   = wavItems - uniqueWav;
         log.AppendLine($"全アイテム: {totalItems}件 / WAV: {wavItems}件 / ユニーク: {uniqueWav}件" +
-                       (dupObjs > 0 ? $" (重複{dupObjs}件 → 同位置に更新)" : ""));
+                       (dupObjs > 0 ? $" (重複{dupObjs}件)" : ""));
 
         if (entries.Count == 0)
         {
             LastDiagLog = log.ToString().TrimEnd();
             return 0;
         }
-
-        File.Copy(ymmpPath, ymmpPath + ".bak", overwrite: true);
 
         var sorted = entries.OrderBy(e => e.Index).ToList();
 
@@ -94,24 +84,30 @@ public static class ProcessCommand
             if (!charLayer.ContainsKey(ch))
                 charLayer[ch] = charLayer.Count + 1;
         }
-        log.AppendLine("レイヤー割り当て: " +
+        log.AppendLine("レイヤー: " +
             string.Join(", ", charLayer.Select(kv => $"{kv.Key}→L{kv.Value}")));
 
-        long cursor = 0;
-        foreach (var (wavPath, _, frameCount) in sorted)
+        // プラグイン自身の書き込みでAutoWatcherが再発火しないよう抑制
+        AutoWatcher.Suppress(() =>
         {
-            var ch    = FilenameParser.TryParse(wavPath)?.CharacterName ?? "";
-            int layer = charLayer.TryGetValue(ch, out int l) ? l : 1;
-            foreach (var obj in wavToObjs[wavPath])
-            {
-                obj["Frame"]  = JsonValue.Create((int)cursor);
-                obj["Length"] = JsonValue.Create(frameCount);
-                obj["Layer"]  = JsonValue.Create(layer);
-            }
-            cursor += frameCount;
-        }
+            File.Copy(ymmpPath, ymmpPath + ".bak", overwrite: true);
 
-        File.WriteAllText(ymmpPath, doc.ToJsonString(WriteOptions));
+            long cursor = 0;
+            foreach (var (wavPath, _, frameCount) in sorted)
+            {
+                var ch    = FilenameParser.TryParse(wavPath)?.CharacterName ?? "";
+                int layer = charLayer.TryGetValue(ch, out int l) ? l : 1;
+                foreach (var obj in wavToObjs[wavPath])
+                {
+                    obj["Frame"]  = JsonValue.Create((int)cursor);
+                    obj["Length"] = JsonValue.Create(frameCount);
+                    obj["Layer"]  = JsonValue.Create(layer);
+                }
+                cursor += frameCount;
+            }
+
+            File.WriteAllText(ymmpPath, doc.ToJsonString(WriteOptions));
+        });
 
         LastDiagLog = log.ToString().TrimEnd();
         var logPath = Path.ChangeExtension(ymmpPath, ".aivoice2helper.log");
@@ -130,16 +126,12 @@ public static class ProcessCommand
         return sorted.Count;
     }
 
-    // アイテムのVoiceLength・AdditionalTime・Lengthから実際の内部FPSを推定
-    // 注: プラグインがLengthを短縮済みのアイテムは実FPSより低い値を示す
-    //     → 全アイテムの implied FPS のうち最大値が真のFPSに最も近い
     static double DetectInternalFps(JsonArray timelines, out string diag)
     {
         var candidates = new List<double>();
 
         foreach (var timeline in timelines)
         {
-            // タイムラインレベルにFPSが直接あれば優先使用
             if (timeline?["FPS"]?.GetValue<double>() is double tFps && tFps > 0)
             {
                 diag = $"Timeline.FPS={tFps}";
@@ -154,7 +146,7 @@ public static class ProcessCommand
                 if (obj["VoiceLength"]?.GetValue<string>() is not string vlStr) continue;
                 if (!TimeSpan.TryParse(vlStr, out var vl) || vl.TotalSeconds <= 0) continue;
                 var addTime = obj["AdditionalTime"]?.GetValue<double>() ?? 0.0;
-                var total = vl.TotalSeconds + addTime;
+                var total   = vl.TotalSeconds + addTime;
                 if (total <= 0) continue;
                 var implied = origLen / total;
                 if (implied >= 20 && implied <= 300)
@@ -164,7 +156,7 @@ public static class ProcessCommand
 
         if (candidates.Count > 0)
         {
-            var max = candidates.Max();
+            var max     = candidates.Max();
             var rounded = Math.Round(max);
             diag = $"候補=[{string.Join(", ", candidates.Select(c => $"{c:F1}"))}] 最大={max:F2} → {rounded}";
             return rounded;
@@ -174,24 +166,19 @@ public static class ProcessCommand
         return 30.0;
     }
 
-    // VoiceLength + AdditionalTime を使って新しいLengthを計算
-    // TailCutSec 分だけ末尾から削る
-    static int ComputeLength(JsonObject obj, double tailCutSec, double fps, out string diag)
+    // VoiceLength + AdditionalTime をそのままフレーム数に変換（カットなし）
+    static int ComputeLength(JsonObject obj, double fps, out string diag)
     {
         if (obj["VoiceLength"]?.GetValue<string>() is string vlStr &&
             TimeSpan.TryParse(vlStr, out var vl))
         {
-            double addTime  = obj["AdditionalTime"]?.GetValue<double>() ?? 0.0;
-            double fullSec  = vl.TotalSeconds + addTime;
-            double trimSec  = Math.Max(0.1, fullSec - tailCutSec);
-            int naturalLen  = (int)Math.Ceiling(fullSec * fps);
-            int newLen      = (int)Math.Ceiling(trimSec * fps);
-            newLen = Math.Max(1, newLen);
-            diag = $"voice={vl.TotalSeconds:F2}s + add={addTime:F2}s = {fullSec:F2}s → cut={tailCutSec:F1}s → {trimSec:F2}s ({newLen}fr / natural={naturalLen}fr)";
+            double addTime = obj["AdditionalTime"]?.GetValue<double>() ?? 0.0;
+            double fullSec = vl.TotalSeconds + addTime;
+            int newLen     = Math.Max(1, (int)Math.Ceiling(fullSec * fps));
+            diag = $"voice={vl.TotalSeconds:F2}s + add={addTime:F2}s = {fullSec:F2}s ({newLen}fr)";
             return newLen;
         }
 
-        // VoiceLength が取れない場合は元のLengthをそのまま使う
         int origLen = obj["Length"]?.GetValue<int>() ?? 1;
         diag = $"VoiceLength取得失敗 origLen={origLen}fr";
         return origLen;

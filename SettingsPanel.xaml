@@ -5,26 +5,15 @@
 
     <StackPanel Margin="8" VerticalAlignment="Top">
 
-        <TextBlock Text="AIVOICE2 Helper  v0.6.9" FontWeight="Bold" FontSize="13" Margin="0,0,0,8"/>
+        <TextBlock Text="AIVOICE2 Helper  v0.7.0" FontWeight="Bold" FontSize="13" Margin="0,0,0,8"/>
 
-        <!-- 末尾カット秒数 -->
-        <TextBlock Text="末尾カット (秒)" Margin="0,0,0,2" FontSize="11"/>
-        <TextBlock Text="0.0 = カットなし  大きい値 = 多くカット" Foreground="#888" FontSize="10" Margin="0,0,0,2"/>
-        <Grid Margin="0,0,0,12">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="40"/>
-            </Grid.ColumnDefinitions>
-            <Slider Grid.Column="0"
-                    Minimum="0.0" Maximum="2.0"
-                    Value="{Binding TailCutSec, Mode=TwoWay}"
-                    TickFrequency="0.1" IsSnapToTickEnabled="True"
-                    VerticalAlignment="Center"/>
-            <TextBlock Grid.Column="1" Text="{Binding TailCutText}"
-                       VerticalAlignment="Center" Margin="4,0,0,0" FontSize="11"/>
-        </Grid>
+        <CheckBox Content="ファイル追加時に自動整理"
+                  IsChecked="{Binding AutoWatch, Mode=TwoWay}"
+                  Margin="0,0,0,4"/>
+        <TextBlock Text="ONにすると新しいWAVが配置されるたびに自動で整理します"
+                   Foreground="#888" FontSize="10" Margin="20,0,0,12"/>
 
-        <Button Content="整理を実行"
+        <Button Content="今すぐ整理"
                 Command="{Binding ExecuteCommand}"
                 Padding="8,4" HorizontalAlignment="Stretch"/>
 
