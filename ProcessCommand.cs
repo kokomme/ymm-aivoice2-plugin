@@ -19,18 +19,12 @@ public static class ProcessCommand
         var doc  = JsonNode.Parse(json);
         if (doc == null) { LastDiagLog = "JSONパース失敗"; return -1; }
 
-        double fps = doc["VideoInfo"]?["FPS"]?.GetValue<double>() ?? 30.0;
-        log.AppendLine($"FPS: {fps} / 末尾カット: {settings.TailCutSec:F1}s");
-
-        // YMMPルートキー一覧（構造把握用）
-        if (doc is JsonObject rootDoc)
-        {
-            var keys = string.Join(", ", rootDoc.Select(kv => kv.Key));
-            log.AppendLine($"[YMMP root keys] {keys}");
-        }
-
         var timelines = doc["Timelines"]?.AsArray();
-        if (timelines == null) { LastDiagLog = log + "Timelinesキーなし"; return 0; }
+        if (timelines == null) { LastDiagLog = "Timelinesキーなし"; return 0; }
+
+        // アイテムのVoiceLength+AdditionalTime+Lengthから内部FPSを検出
+        double internalFps = DetectInternalFps(timelines);
+        log.AppendLine($"内部FPS: {internalFps} / 末尾カット: {settings.TailCutSec:F1}s");
 
         var entries = new List<(JsonObject Item, int Index, int LengthFrames)>();
         int totalItems = 0, wavItems = 0;
@@ -56,31 +50,13 @@ public static class ProcessCommand
                     continue;
                 }
 
-                // アイテムの全フィールドをダンプ（音声制御フィールド特定用）
-                log.AppendLine($"  [{wavItems}] [全フィールド] {string.Join(", ", obj.Select(kv => $"{kv.Key}={kv.Value}"))}");
+                // VoiceLength + AdditionalTime から正しいフレーム数を算出
+                // (VoiceLength/AdditionalTimeは本プラグインが変更しないため常に正確)
+                int newLength = ComputeLength(obj, settings.TailCutSec, internalFps,
+                                              out string lenDiag);
+                log.AppendLine($"  [{wavItems}] {Path.GetFileName(parsed.FullPath)}: {lenDiag}");
 
-
-                int lengthFrames;
-                if (File.Exists(parsed.FullPath))
-                {
-                    // 常にWAVファイルの実長を基準にする
-                    // (JSONのLengthは過去の実行で書き換えられている可能性があるため使わない)
-                    var (fullSec, diag) = WavSilenceTrimmer.GetFullDuration(parsed.FullPath);
-                    double trimSec = settings.TailCutSec > 0
-                        ? Math.Max(0.1, fullSec - settings.TailCutSec)
-                        : fullSec;
-                    lengthFrames = Math.Max(1, (int)Math.Ceiling(trimSec * fps));
-                    log.AppendLine($"  [{wavItems}] {Path.GetFileName(parsed.FullPath)}: {diag} cut={settings.TailCutSec:F1}s → {trimSec:F2}s ({lengthFrames}fr)");
-                }
-                else
-                {
-                    // ファイル不存在時のみJSONのLengthを使用
-                    lengthFrames = obj["Length"]?.GetValue<int>() ?? 1;
-                    if (lengthFrames <= 0) lengthFrames = 1;
-                    log.AppendLine($"  [{wavItems}] {Path.GetFileName(parsed.FullPath)}: ファイル不存在 origLen={lengthFrames}fr");
-                }
-
-                entries.Add((obj, parsed.Index, lengthFrames));
+                entries.Add((obj, parsed.Index, newLength));
             }
         }
 
@@ -103,30 +79,6 @@ public static class ProcessCommand
             cursor += frameCount;
         }
 
-        // プロジェクトの総フレーム数を確認・延長（VideoInfo の全フィールドをログ出力）
-        var videoInfo = doc["VideoInfo"]?.AsObject();
-        if (videoInfo != null)
-        {
-            log.AppendLine("[VideoInfo]");
-            foreach (var kv in videoInfo)
-                log.AppendLine($"  {kv.Key} = {kv.Value}");
-
-            // 総フレーム数フィールドを探して必要なら延長する
-            foreach (var fn in new[] { "TotalFrame", "Frame", "Duration", "TotalFrameCount", "Length" })
-            {
-                if (videoInfo[fn] is JsonValue fv && fv.TryGetValue<int>(out var total))
-                {
-                    log.AppendLine($"  → 総フレーム数フィールド: {fn} = {total}, cursor = {cursor}");
-                    if (cursor > total)
-                    {
-                        videoInfo[fn] = JsonValue.Create((int)cursor);
-                        log.AppendLine($"  → {fn} を {total} → {cursor} に延長");
-                    }
-                    break;
-                }
-            }
-        }
-
         File.WriteAllText(ymmpPath, doc.ToJsonString(WriteOptions));
 
         LastDiagLog = log.ToString().TrimEnd();
@@ -144,6 +96,52 @@ public static class ProcessCommand
         catch { }
 
         return sorted.Count;
+    }
+
+    // アイテムのVoiceLength・AdditionalTime・Lengthから実際の内部FPSを推定
+    static double DetectInternalFps(JsonArray timelines)
+    {
+        foreach (var timeline in timelines)
+        {
+            foreach (var item in timeline?["Items"]?.AsArray() ?? new JsonArray())
+            {
+                if (item is not JsonObject obj) continue;
+                var origLen = obj["Length"]?.GetValue<int>() ?? 0;
+                if (origLen <= 0) continue;
+                if (obj["VoiceLength"]?.GetValue<string>() is not string vlStr) continue;
+                if (!TimeSpan.TryParse(vlStr, out var vl) || vl.TotalSeconds <= 0) continue;
+                var addTime = obj["AdditionalTime"]?.GetValue<double>() ?? 0.0;
+                var total = vl.TotalSeconds + addTime;
+                if (total <= 0) continue;
+                var implied = origLen / total;
+                if (implied >= 20 && implied <= 300)
+                    return Math.Round(implied); // 60.19 → 60
+            }
+        }
+        return 30.0; // フォールバック
+    }
+
+    // VoiceLength + AdditionalTime を使って新しいLengthを計算
+    // TailCutSec 分だけ末尾から削る
+    static int ComputeLength(JsonObject obj, double tailCutSec, double fps, out string diag)
+    {
+        if (obj["VoiceLength"]?.GetValue<string>() is string vlStr &&
+            TimeSpan.TryParse(vlStr, out var vl))
+        {
+            double addTime  = obj["AdditionalTime"]?.GetValue<double>() ?? 0.0;
+            double fullSec  = vl.TotalSeconds + addTime;
+            double trimSec  = Math.Max(0.1, fullSec - tailCutSec);
+            int naturalLen  = (int)Math.Ceiling(fullSec * fps);
+            int newLen      = (int)Math.Ceiling(trimSec * fps);
+            newLen = Math.Max(1, newLen);
+            diag = $"voice={vl.TotalSeconds:F2}s + add={addTime:F2}s = {fullSec:F2}s → cut={tailCutSec:F1}s → {trimSec:F2}s ({newLen}fr / natural={naturalLen}fr)";
+            return newLen;
+        }
+
+        // VoiceLength が取れない場合は元のLengthをそのまま使う
+        int origLen = obj["Length"]?.GetValue<int>() ?? 1;
+        diag = $"VoiceLength取得失敗 origLen={origLen}fr";
+        return origLen;
     }
 
     static (string? Path, string KeyPath) FindWavPath(JsonNode node, string prefix = "")
