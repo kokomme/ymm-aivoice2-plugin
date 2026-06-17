@@ -8,13 +8,15 @@
         <TextBlock Text="AIVOICE2 Helper" FontWeight="Bold" FontSize="13" Margin="0,0,0,8"/>
 
         <!-- 末尾無音カット ON/OFF -->
-        <CheckBox Content="末尾無音カットを有効にする"
+        <CheckBox Content="末尾無音カットを有効にする（実験的）"
                   IsChecked="{Binding TrimSilence, Mode=TwoWay}"
-                  Margin="0,0,0,8"/>
+                  Margin="0,0,0,2"/>
+        <TextBlock Text="※ OFFのままで掛け合い配置が正しく動作します"
+                   FontSize="10" Foreground="#888" Margin="0,0,0,8" TextWrapping="Wrap"/>
 
         <!-- 無音閾値・マージン（TrimSilence が ON のときだけ有効） -->
         <StackPanel IsEnabled="{Binding TrimSilence}">
-            <TextBlock Text="無音閾値 (dB)" Margin="0,0,0,2"/>
+            <TextBlock Text="無音閾値 (dB) ※低いほど保守的" Margin="0,0,0,2"/>
             <Grid Margin="0,0,0,8">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
