@@ -7,19 +7,45 @@
 
         <TextBlock Text="AIVOICE2 Helper" FontWeight="Bold" FontSize="13" Margin="0,0,0,8"/>
 
-        <TextBlock TextWrapping="Wrap" Foreground="#555" Margin="0,0,0,12">
-            AIVOICE2で書き出したWAVを連番順に並べ替え、掛け合い形式に整理します。
-        </TextBlock>
+        <!-- 無音閾値（ピーク比） -->
+        <TextBlock Text="末尾カット閾値 (ピーク比 dB)" Margin="0,0,0,2" FontSize="11"/>
+        <TextBlock Text="-40=推奨  小さい値=より多く残す" Foreground="#888" FontSize="10" Margin="0,0,0,2"/>
+        <Grid Margin="0,0,0,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="52"/>
+            </Grid.ColumnDefinitions>
+            <Slider Grid.Column="0"
+                    Minimum="-80" Maximum="-10"
+                    Value="{Binding SilenceThresholdDb, Mode=TwoWay}"
+                    TickFrequency="5" IsSnapToTickEnabled="True"
+                    VerticalAlignment="Center"/>
+            <TextBlock Grid.Column="1" Text="{Binding ThresholdText}"
+                       VerticalAlignment="Center" Margin="4,0,0,0"/>
+        </Grid>
+
+        <!-- 末尾マージン -->
+        <TextBlock Text="末尾マージン (ms)" Margin="0,0,0,2" FontSize="11"/>
+        <Grid Margin="0,0,0,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="52"/>
+            </Grid.ColumnDefinitions>
+            <Slider Grid.Column="0"
+                    Minimum="0" Maximum="1500"
+                    Value="{Binding TailMarginMs, Mode=TwoWay}"
+                    TickFrequency="50" IsSnapToTickEnabled="True"
+                    VerticalAlignment="Center"/>
+            <TextBlock Grid.Column="1" Text="{Binding MarginText}"
+                       VerticalAlignment="Center" Margin="4,0,0,0"/>
+        </Grid>
 
         <Button Content="整理を実行"
                 Command="{Binding ExecuteCommand}"
-                Padding="8,4"
-                HorizontalAlignment="Stretch"/>
+                Padding="8,4" HorizontalAlignment="Stretch"/>
 
         <TextBlock Text="{Binding ResultText}"
-                   Margin="0,8,0,0"
-                   TextWrapping="Wrap"
-                   Foreground="#555"/>
+                   Margin="0,8,0,0" TextWrapping="Wrap" Foreground="#555"/>
 
     </StackPanel>
 </UserControl>

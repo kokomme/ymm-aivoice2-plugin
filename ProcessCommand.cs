@@ -7,7 +7,7 @@ public static class ProcessCommand
     public static string LastDiagLog  { get; private set; } = "";
     public static bool   AutoReloaded { get; private set; } = false;
 
-    public static int Execute()
+    public static int Execute(PluginSettings settings)
     {
         var log = new System.Text.StringBuilder();
 
@@ -19,10 +19,13 @@ public static class ProcessCommand
         var doc  = JsonNode.Parse(json);
         if (doc == null) { LastDiagLog = "JSONパース失敗"; return -1; }
 
+        double fps = doc["VideoInfo"]?["FPS"]?.GetValue<double>() ?? 30.0;
+        log.AppendLine($"FPS: {fps}");
+
         var timelines = doc["Timelines"]?.AsArray();
         if (timelines == null) { LastDiagLog = log + "Timelinesキーなし"; return 0; }
 
-        // 連番WAVアイテムを収集
+        // (item, 連番index, フレーム数)
         var entries = new List<(JsonObject Item, int Index, int LengthFrames)>();
         int totalItems = 0, wavItems = 0;
 
@@ -37,27 +40,43 @@ public static class ProcessCommand
                 totalItems++;
 
                 bool diag = totalItems <= 3;
-                if (diag)
-                {
-                    var hatsuonRaw = obj["Hatsuon"]?.ToJsonString() ?? "(null)";
-                    var preview = hatsuonRaw.Length > 120 ? hatsuonRaw[..120] + "…" : hatsuonRaw;
-                    log.AppendLine($"  [{totalItems}] Hatsuon={preview}");
-                }
 
                 var (filePath, _) = FindWavPath(obj);
-                if (filePath == null) { if (diag) log.AppendLine($"      → WAVパス見つからず"); continue; }
+                if (filePath == null)
+                {
+                    if (diag) log.AppendLine($"  [{totalItems}] WAVパス見つからず");
+                    continue;
+                }
                 wavItems++;
 
                 var parsed = FilenameParser.TryParse(filePath);
-                if (parsed == null) { if (diag) log.AppendLine($"      → ファイル名パース失敗: {Path.GetFileName(filePath)}"); continue; }
+                if (parsed == null)
+                {
+                    if (diag) log.AppendLine($"  [{wavItems}] ファイル名パース失敗: {Path.GetFileName(filePath)}");
+                    continue;
+                }
 
-                // YMM4 が設定した Length をそのまま使う（WAV再解析なし）
-                int origLen = obj["Length"]?.GetValue<int>() ?? 1;
-                if (origLen <= 0) origLen = 1;
+                // 末尾無音カット: WAV 解析でフレーム数を決定
+                // ファイルが存在しない場合は YMM4 の元の Length を使う
+                int lengthFrames;
+                if (File.Exists(parsed.FullPath))
+                {
+                    var (trimSec, wavDiag) = WavSilenceTrimmer.GetTrimmedDuration(
+                        parsed.FullPath,
+                        thresholdDb:   settings.SilenceThresholdDb,
+                        tailMarginSec: settings.TailMarginSec);
+                    lengthFrames = (int)Math.Ceiling(trimSec * fps);
+                    if (lengthFrames <= 0) lengthFrames = 1;
+                    log.AppendLine($"  [{wavItems}] {Path.GetFileName(parsed.FullPath)}: {wavDiag} → {lengthFrames}fr");
+                }
+                else
+                {
+                    lengthFrames = obj["Length"]?.GetValue<int>() ?? 1;
+                    if (lengthFrames <= 0) lengthFrames = 1;
+                    log.AppendLine($"  [{wavItems}] {Path.GetFileName(parsed.FullPath)}: ファイル不存在 origLen={lengthFrames}fr");
+                }
 
-                if (diag) log.AppendLine($"      → {Path.GetFileName(filePath)} index={parsed.Index} len={origLen}fr");
-
-                entries.Add((obj, parsed.Index, origLen));
+                entries.Add((obj, parsed.Index, lengthFrames));
             }
         }
 
@@ -71,12 +90,12 @@ public static class ProcessCommand
 
         File.Copy(ymmpPath, ymmpPath + ".bak", overwrite: true);
 
-        // 連番順に並べ、Frame を累積配置
         var sorted = entries.OrderBy(e => e.Index).ToList();
         long cursor = 0;
         foreach (var (item, _, frameCount) in sorted)
         {
-            item["Frame"] = JsonValue.Create((int)cursor);
+            item["Frame"]  = JsonValue.Create((int)cursor);
+            item["Length"] = JsonValue.Create(frameCount);
             cursor += frameCount;
         }
 
@@ -112,8 +131,8 @@ public static class ProcessCommand
                     return (s, cur);
                 if (kv.Value != null)
                 {
-                    var (found, foundKey) = FindWavPath(kv.Value, cur);
-                    if (found != null) return (found, foundKey);
+                    var (found, key) = FindWavPath(kv.Value, cur);
+                    if (found != null) return (found, key);
                 }
             }
         }
@@ -123,8 +142,8 @@ public static class ProcessCommand
             {
                 var el = arr[i];
                 if (el == null) continue;
-                var (found, foundKey) = FindWavPath(el, $"{prefix}[{i}]");
-                if (found != null) return (found, foundKey);
+                var (found, key) = FindWavPath(el, $"{prefix}[{i}]");
+                if (found != null) return (found, key);
             }
         }
         return (null, "");

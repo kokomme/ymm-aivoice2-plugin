@@ -4,6 +4,22 @@ public class Aivoice2HelperViewModel : INotifyPropertyChanged
 {
     public event PropertyChangedEventHandler? PropertyChanged;
 
+    double _thresholdDb = -40.0;
+    public double SilenceThresholdDb
+    {
+        get => _thresholdDb;
+        set { _thresholdDb = value; OnPropertyChanged(); OnPropertyChanged(nameof(ThresholdText)); }
+    }
+    public string ThresholdText => $"{(int)_thresholdDb} dB";
+
+    double _marginMs = 500.0;
+    public double TailMarginMs
+    {
+        get => _marginMs;
+        set { _marginMs = value; OnPropertyChanged(); OnPropertyChanged(nameof(MarginText)); }
+    }
+    public string MarginText => $"{(int)_marginMs} ms";
+
     string _resultText = "";
     public string ResultText
     {
@@ -18,8 +34,13 @@ public class Aivoice2HelperViewModel : INotifyPropertyChanged
         ResultText = "処理中...";
         try
         {
-            int count = ProcessCommand.Execute();
-            var diag = ProcessCommand.LastDiagLog;
+            var settings = new PluginSettings
+            {
+                SilenceThresholdDb = SilenceThresholdDb,
+                TailMarginSec      = TailMarginMs / 1000.0,
+            };
+            int count = ProcessCommand.Execute(settings);
+            var diag     = ProcessCommand.LastDiagLog;
             var reloaded = ProcessCommand.AutoReloaded;
             var diagBlock = string.IsNullOrEmpty(diag) ? "" : $"\n[診断]\n{diag}";
             ResultText = count switch
@@ -31,10 +52,7 @@ public class Aivoice2HelperViewModel : INotifyPropertyChanged
                     : $"{count} 件を整理しました。\nYMM4でプロジェクトを再読み込みしてください。") + diagBlock
             };
         }
-        catch (Exception ex)
-        {
-            ResultText = $"エラー: {ex.Message}";
-        }
+        catch (Exception ex) { ResultText = $"エラー: {ex.Message}"; }
     }
 
     protected void OnPropertyChanged([CallerMemberName] string? name = null)
