@@ -74,40 +74,22 @@ public static class ProcessCommand
             return 0;
         }
 
+        File.Copy(ymmpPath, ymmpPath + ".bak", overwrite: true);
+
         var sorted = entries.OrderBy(e => e.Index).ToList();
-
-        // キャラ名 → Layer番号 (初登場順に 1, 2, 3...)
-        var charLayer = new Dictionary<string, int>(StringComparer.Ordinal);
-        foreach (var (wavPath, _, _) in sorted)
+        long cursor = 0;
+        foreach (var (wavPath, _, frameCount) in sorted)
         {
-            var ch = FilenameParser.TryParse(wavPath)?.CharacterName ?? "";
-            if (!charLayer.ContainsKey(ch))
-                charLayer[ch] = charLayer.Count + 1;
-        }
-        log.AppendLine("レイヤー: " +
-            string.Join(", ", charLayer.Select(kv => $"{kv.Key}→L{kv.Value}")));
-
-        // プラグイン自身の書き込みでAutoWatcherが再発火しないよう抑制
-        AutoWatcher.Suppress(() =>
-        {
-            File.Copy(ymmpPath, ymmpPath + ".bak", overwrite: true);
-
-            long cursor = 0;
-            foreach (var (wavPath, _, frameCount) in sorted)
+            foreach (var obj in wavToObjs[wavPath])
             {
-                var ch    = FilenameParser.TryParse(wavPath)?.CharacterName ?? "";
-                int layer = charLayer.TryGetValue(ch, out int l) ? l : 1;
-                foreach (var obj in wavToObjs[wavPath])
-                {
-                    obj["Frame"]  = JsonValue.Create((int)cursor);
-                    obj["Length"] = JsonValue.Create(frameCount);
-                    obj["Layer"]  = JsonValue.Create(layer);
-                }
-                cursor += frameCount;
+                obj["Frame"]  = JsonValue.Create((int)cursor);
+                obj["Length"] = JsonValue.Create(frameCount);
+                // Layer は D&D 配置のまま変更しない
             }
+            cursor += frameCount;
+        }
 
-            File.WriteAllText(ymmpPath, doc.ToJsonString(WriteOptions));
-        });
+        File.WriteAllText(ymmpPath, doc.ToJsonString(WriteOptions));
 
         LastDiagLog = log.ToString().TrimEnd();
         var logPath = Path.ChangeExtension(ymmpPath, ".aivoice2helper.log");
@@ -166,7 +148,7 @@ public static class ProcessCommand
         return 30.0;
     }
 
-    // VoiceLength + AdditionalTime をそのままフレーム数に変換（カットなし）
+    // VoiceLength + AdditionalTime をそのままフレーム数に変換（末尾カットなし）
     static int ComputeLength(JsonObject obj, double fps, out string diag)
     {
         if (obj["VoiceLength"]?.GetValue<string>() is string vlStr &&

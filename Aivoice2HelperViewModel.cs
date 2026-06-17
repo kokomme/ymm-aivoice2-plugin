@@ -4,19 +4,6 @@ public class Aivoice2HelperViewModel : INotifyPropertyChanged
 {
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    bool _autoWatch;
-    public bool AutoWatch
-    {
-        get => _autoWatch;
-        set
-        {
-            _autoWatch = value;
-            OnPropertyChanged();
-            if (value) StartWatcher();
-            else       AutoWatcher.Stop();
-        }
-    }
-
     string _resultText = "";
     public string ResultText
     {
@@ -43,38 +30,8 @@ public class Aivoice2HelperViewModel : INotifyPropertyChanged
                     ? $"{count} 件を整理しました。（自動再読み込み済み）"
                     : $"{count} 件を整理しました。\nYMM4でプロジェクトを再読み込みしてください。") + diagBlock
             };
-
-            // 手動実行後もウォッチャーを最新プロジェクトパスで更新
-            if (_autoWatch) StartWatcher();
         }
         catch (Exception ex) { ResultText = $"エラー: {ex.Message}"; }
-    }
-
-    void AutoExecute()
-    {
-        // FileSystemWatcherのスレッドから呼ばれる → UIスレッドで実行
-        System.Windows.Application.Current?.Dispatcher.Invoke(() =>
-        {
-            try
-            {
-                int count = ProcessCommand.Execute();
-                if (count > 0)
-                    ResultText = $"自動整理: {count} 件";
-            }
-            catch { }
-        });
-    }
-
-    void StartWatcher()
-    {
-        var path = ProjectDetector.GetCurrentProjectPath();
-        if (path == null)
-        {
-            ResultText = "プロジェクトが見つかりません。先に手動で「今すぐ整理」を実行してください。";
-            AutoWatcher.Stop();
-            return;
-        }
-        AutoWatcher.Start(path, AutoExecute);
     }
 
     protected void OnPropertyChanged([CallerMemberName] string? name = null)
