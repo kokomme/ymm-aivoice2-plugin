@@ -22,7 +22,8 @@ public static class ProcessCommand
         double fps = doc["VideoInfo"]?["FPS"]?.GetValue<double>() ?? 30.0;
         log.AppendLine($"FPS: {fps}");
 
-        var entries = new List<(JsonObject Item, ParsedVoiceFile Parsed, double TrimmedSec)>();
+        // LengthFrames: OFF モードは JSON の元の Length、ON モードは WAV 解析で算出
+        var entries = new List<(JsonObject Item, ParsedVoiceFile Parsed, int LengthFrames)>();
 
         var timelines = doc["Timelines"]?.AsArray();
         if (timelines == null) { LastDiagLog = log + "Timelinesキーなし"; return 0; }
@@ -83,24 +84,27 @@ public static class ProcessCommand
                     continue;
                 }
 
-                double trimmedSec;
+                int lengthFrames;
                 if (settings.TrimSilence)
                 {
-                    var (ts, fs2, wavDiag) = WavSilenceTrimmer.GetTrimmedDurationSecWithDiag(
+                    var (ts, _, wavDiag) = WavSilenceTrimmer.GetTrimmedDurationSecWithDiag(
                         parsed.FullPath,
                         silenceThresholdDb: settings.SilenceThresholdDb,
                         tailMarginSec: settings.TailMarginSec);
-                    trimmedSec = ts;
-                    log.AppendLine($"      [{wavItems}] {Path.GetFileName(parsed.FullPath)}: {wavDiag}");
+                    lengthFrames = (int)Math.Ceiling(ts * fps);
+                    if (lengthFrames <= 0) lengthFrames = 1;
+                    log.AppendLine($"      [{wavItems}] {Path.GetFileName(parsed.FullPath)}: {wavDiag} → {lengthFrames}fr");
                 }
                 else
                 {
-                    var (dur, fullDiag) = WavSilenceTrimmer.GetFullDurationSecWithDiag(parsed.FullPath);
-                    trimmedSec = dur;
-                    log.AppendLine($"      [{wavItems}] {Path.GetFileName(parsed.FullPath)}: {fullDiag}");
+                    // OFF モード: YMM4 が監視配置時に設定した Length をそのまま使う
+                    // WAV を読み直さないため、長い音声でも正しく再生される
+                    lengthFrames = obj["Length"]?.GetValue<int>() ?? 1;
+                    if (lengthFrames <= 0) lengthFrames = 1;
+                    log.AppendLine($"      [{wavItems}] {Path.GetFileName(parsed.FullPath)}: origLen={lengthFrames}fr ({lengthFrames/fps:F2}s)");
                 }
 
-                entries.Add((obj, parsed, trimmedSec));
+                entries.Add((obj, parsed, lengthFrames));
             }
         }
 
@@ -116,14 +120,13 @@ public static class ProcessCommand
 
         var sorted = entries.OrderBy(e => e.Parsed.Index).ToList();
         long cursor = 0;
-        foreach (var (item, _, trimmedSec) in sorted)
+        foreach (var (item, _, frameCount) in sorted)
         {
-            long lengthFrames = (long)Math.Ceiling(trimmedSec * fps);
-            if (lengthFrames <= 0) lengthFrames = 1;
-
-            item["Frame"]  = JsonValue.Create((int)cursor);
-            item["Length"] = JsonValue.Create((int)lengthFrames);
-            cursor += lengthFrames;
+            item["Frame"] = JsonValue.Create((int)cursor);
+            // ON モードのみ Length を更新（OFF は YMM4 の元の値を保持）
+            if (settings.TrimSilence)
+                item["Length"] = JsonValue.Create(frameCount);
+            cursor += frameCount;
         }
 
         File.WriteAllText(ymmpPath, doc.ToJsonString(WriteOptions));
