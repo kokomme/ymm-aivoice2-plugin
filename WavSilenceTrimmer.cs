@@ -4,7 +4,8 @@ namespace YmmAivoice2Plugin;
 
 public static class WavSilenceTrimmer
 {
-    // thresholdDb はピーク振幅に対する相対値 (例: -40 → ピークの1/100)
+    // thresholdDb: ピーク振幅に対する相対値 (例: -40 → ピークの1/100)
+    // 50ms窓のRMSで判定するため、1サンプルのリバーブスパイクに引っかからない
     public static (double TrimmedSec, string Diag) GetTrimmedDuration(
         string filePath,
         double thresholdDb   = -40.0,
@@ -24,99 +25,88 @@ public static class WavSilenceTrimmer
             while (read < dl && (n = fs.Read(data, read, dl - read)) > 0)
                 read += n;
 
+            int chs = Math.Max(1, ch);
+            int bps = bd / 8;
+            int totalFrames = read / (bps * chs);
+
             long peak = FindPeak(data, read, bd);
             if (peak <= 0)
-                return (0.0, "ピーク=0 (無音ファイル)");
+                return (totalFrames / (double)sr, $"ピーク=0 (無音ファイル)");
 
-            // 相対閾値: peak × 10^(dB/20)
             long absThreshold = Math.Max(1L, (long)(peak * Math.Pow(10.0, thresholdDb / 20.0)));
 
-            int lastSmp   = FindLastActive(data, read, bd, absThreshold);
-            int lastFrame = lastSmp / Math.Max(1, ch);
-            int total     = (read / (bd / 8)) / Math.Max(1, ch);
-            int margin    = (int)(sr * tailMarginSec);
-            int effective = Math.Min(lastFrame + margin, total);
-            double trimmed = effective / (double)sr;
-            double full    = total    / (double)sr;
+            // 50ms窓のRMSで末尾から走査
+            int windowFrames = Math.Max(1, (int)(sr * 0.05));
+            int hopFrames    = Math.Max(1, windowFrames / 5); // 10ms刻み
+            int lastFrame    = FindLastActiveFrame(data, read, bd, chs, bps, totalFrames, absThreshold, windowFrames, hopFrames);
+
+            int marginFrames = (int)(sr * tailMarginSec);
+            int effective    = Math.Min(lastFrame + marginFrames, totalFrames);
+            double trimmed   = effective / (double)sr;
+            double full      = totalFrames / (double)sr;
 
             return (trimmed,
-                $"sr={sr} ch={ch} bit={bd} peak={peak} absThreshold={absThreshold} " +
-                $"full={full:F2}s trim={trimmed:F2}s (thr={thresholdDb}dB margin={tailMarginSec*1000:F0}ms)");
+                $"sr={sr} ch={ch} bit={bd} peak={peak} thr={absThreshold} " +
+                $"full={full:F2}s trim={trimmed:F2}s (dB={thresholdDb} margin={tailMarginSec*1000:F0}ms)");
         }
         catch (Exception ex) { return (0.0, $"例外: {ex.Message}"); }
     }
 
+    // 50msウィンドウのRMSをチェック。末尾から走査してRMS>閾値の最後の窓末端を返す
+    static int FindLastActiveFrame(
+        byte[] data, int byteCount, int bitDepth, int chs, int bps,
+        int totalFrames, long absThreshold, int windowFrames, int hopFrames)
+    {
+        for (int endFrame = totalFrames; endFrame >= windowFrames; endFrame -= hopFrames)
+        {
+            int startFrame = endFrame - windowFrames;
+            double sumSq   = 0;
+            int    count   = 0;
+
+            for (int f = startFrame; f < endFrame; f++)
+            {
+                for (int c = 0; c < chs; c++)
+                {
+                    int byteIdx = (f * chs + c) * bps;
+                    if (byteIdx + bps > byteCount) continue;
+                    long s = ReadSampleAbs(data, byteIdx, bitDepth);
+                    sumSq += (double)s * s;
+                    count++;
+                }
+            }
+
+            if (count > 0 && Math.Sqrt(sumSq / count) > absThreshold)
+                return endFrame;
+        }
+        return 0;
+    }
+
     static long FindPeak(byte[] data, int byteCount, int bitDepth)
     {
+        int bps = bitDepth / 8;
         long peak = 0;
-        if (bitDepth == 16)
+        for (int i = 0; i + bps <= byteCount; i += bps)
         {
-            for (int i = 0; i < byteCount / 2; i++)
-            {
-                long v = Math.Abs((long)BinaryPrimitives.ReadInt16LittleEndian(data.AsSpan(i * 2, 2)));
-                if (v > peak) peak = v;
-            }
-        }
-        else if (bitDepth == 8)
-        {
-            for (int i = 0; i < byteCount; i++)
-            {
-                long v = Math.Abs(data[i] - 128);
-                if (v > peak) peak = v;
-            }
-        }
-        else if (bitDepth == 24)
-        {
-            for (int i = 0; i < byteCount / 3; i++)
-            {
-                int raw = data[i*3] | (data[i*3+1] << 8) | (data[i*3+2] << 16);
-                if ((raw & 0x800000) != 0) raw |= unchecked((int)0xFF000000);
-                long v = Math.Abs((long)raw);
-                if (v > peak) peak = v;
-            }
-        }
-        else if (bitDepth == 32)
-        {
-            float fpeak = 0;
-            for (int i = 0; i < byteCount / 4; i++)
-            {
-                float v = Math.Abs(BitConverter.ToSingle(data, i * 4));
-                if (v > fpeak) fpeak = v;
-            }
-            return (long)(fpeak * 1_000_000);
+            long v = ReadSampleAbs(data, i, bitDepth);
+            if (v > peak) peak = v;
         }
         return peak;
     }
 
-    static int FindLastActive(byte[] data, int byteCount, int bitDepth, long threshold)
+    static long ReadSampleAbs(byte[] data, int byteIdx, int bitDepth) => bitDepth switch
     {
-        if (bitDepth == 16)
-        {
-            for (int i = byteCount / 2 - 1; i >= 0; i--)
-                if (Math.Abs((long)BinaryPrimitives.ReadInt16LittleEndian(data.AsSpan(i * 2, 2))) > threshold)
-                    return i;
-        }
-        else if (bitDepth == 8)
-        {
-            for (int i = byteCount - 1; i >= 0; i--)
-                if (Math.Abs(data[i] - 128) > threshold) return i;
-        }
-        else if (bitDepth == 24)
-        {
-            for (int i = byteCount / 3 - 1; i >= 0; i--)
-            {
-                int raw = data[i*3] | (data[i*3+1] << 8) | (data[i*3+2] << 16);
-                if ((raw & 0x800000) != 0) raw |= unchecked((int)0xFF000000);
-                if (Math.Abs((long)raw) > threshold) return i;
-            }
-        }
-        else if (bitDepth == 32)
-        {
-            float fthr = threshold / 1_000_000f;
-            for (int i = byteCount / 4 - 1; i >= 0; i--)
-                if (Math.Abs(BitConverter.ToSingle(data, i * 4)) > fthr) return i;
-        }
-        return 0;
+        16 => Math.Abs((long)BinaryPrimitives.ReadInt16LittleEndian(data.AsSpan(byteIdx, 2))),
+        8  => Math.Abs(data[byteIdx] - 128),
+        24 => Math.Abs(ReadInt24(data, byteIdx)),
+        32 => (long)(Math.Abs(BitConverter.ToSingle(data, byteIdx)) * 1_000_000),
+        _  => 0
+    };
+
+    static long ReadInt24(byte[] data, int i)
+    {
+        int raw = data[i] | (data[i+1] << 8) | (data[i+2] << 16);
+        if ((raw & 0x800000) != 0) raw |= unchecked((int)0xFF000000);
+        return Math.Abs((long)raw);
     }
 
     static bool TryParseWavHeader(Stream s, out int sr, out int ch, out int bd, out int dl)
