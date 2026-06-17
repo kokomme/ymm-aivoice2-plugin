@@ -50,19 +50,23 @@ public static class ProcessCommand
                 }
 
                 int lengthFrames;
-                if (File.Exists(parsed.FullPath) && settings.TailCutSec > 0)
+                if (File.Exists(parsed.FullPath))
                 {
+                    // 常にWAVファイルの実長を基準にする
+                    // (JSONのLengthは過去の実行で書き換えられている可能性があるため使わない)
                     var (fullSec, diag) = WavSilenceTrimmer.GetFullDuration(parsed.FullPath);
-                    double trimSec = Math.Max(0.1, fullSec - settings.TailCutSec);
+                    double trimSec = settings.TailCutSec > 0
+                        ? Math.Max(0.1, fullSec - settings.TailCutSec)
+                        : fullSec;
                     lengthFrames = Math.Max(1, (int)Math.Ceiling(trimSec * fps));
                     log.AppendLine($"  [{wavItems}] {Path.GetFileName(parsed.FullPath)}: {diag} cut={settings.TailCutSec:F1}s → {trimSec:F2}s ({lengthFrames}fr)");
                 }
                 else
                 {
-                    // TailCutSec=0 またはファイル不存在: YMM4の元のLengthを使用
+                    // ファイル不存在時のみJSONのLengthを使用
                     lengthFrames = obj["Length"]?.GetValue<int>() ?? 1;
                     if (lengthFrames <= 0) lengthFrames = 1;
-                    log.AppendLine($"  [{wavItems}] {Path.GetFileName(parsed.FullPath)}: origLen={lengthFrames}fr");
+                    log.AppendLine($"  [{wavItems}] {Path.GetFileName(parsed.FullPath)}: ファイル不存在 origLen={lengthFrames}fr");
                 }
 
                 entries.Add((obj, parsed.Index, lengthFrames));
