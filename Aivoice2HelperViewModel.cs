@@ -4,7 +4,7 @@ public class Aivoice2HelperViewModel : INotifyPropertyChanged
 {
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    double _tailCutSec = 0.3;
+    double _tailCutSec = 0.7;
     public double TailCutSec
     {
         get => _tailCutSec;
