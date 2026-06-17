@@ -5,7 +5,7 @@
 
     <StackPanel Margin="8" VerticalAlignment="Top">
 
-        <TextBlock Text="AIVOICE2 Helper  v0.7.1" FontWeight="Bold" FontSize="13" Margin="0,0,0,12"/>
+        <TextBlock Text="AIVOICE2 Helper  v0.7.2" FontWeight="Bold" FontSize="13" Margin="0,0,0,12"/>
 
         <Button Content="整理を実行"
                 Command="{Binding ExecuteCommand}"
