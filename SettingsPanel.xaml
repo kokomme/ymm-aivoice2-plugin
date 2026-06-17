@@ -7,37 +7,21 @@
 
         <TextBlock Text="AIVOICE2 Helper" FontWeight="Bold" FontSize="13" Margin="0,0,0,8"/>
 
-        <!-- 無音閾値（ピーク比） -->
-        <TextBlock Text="末尾カット閾値 (ピーク比 dB)" Margin="0,0,0,2" FontSize="11"/>
-        <TextBlock Text="-40=推奨  小さい値=より多く残す" Foreground="#888" FontSize="10" Margin="0,0,0,2"/>
-        <Grid Margin="0,0,0,8">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="52"/>
-            </Grid.ColumnDefinitions>
-            <Slider Grid.Column="0"
-                    Minimum="-80" Maximum="-10"
-                    Value="{Binding SilenceThresholdDb, Mode=TwoWay}"
-                    TickFrequency="5" IsSnapToTickEnabled="True"
-                    VerticalAlignment="Center"/>
-            <TextBlock Grid.Column="1" Text="{Binding ThresholdText}"
-                       VerticalAlignment="Center" Margin="4,0,0,0"/>
-        </Grid>
-
-        <!-- 末尾マージン -->
-        <TextBlock Text="末尾マージン (ms)" Margin="0,0,0,2" FontSize="11"/>
+        <!-- 末尾カット秒数 -->
+        <TextBlock Text="末尾カット (秒)" Margin="0,0,0,2" FontSize="11"/>
+        <TextBlock Text="0.0 = カットなし  大きい値 = 多くカット" Foreground="#888" FontSize="10" Margin="0,0,0,2"/>
         <Grid Margin="0,0,0,12">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="52"/>
+                <ColumnDefinition Width="40"/>
             </Grid.ColumnDefinitions>
             <Slider Grid.Column="0"
-                    Minimum="0" Maximum="1500"
-                    Value="{Binding TailMarginMs, Mode=TwoWay}"
-                    TickFrequency="50" IsSnapToTickEnabled="True"
+                    Minimum="0.0" Maximum="2.0"
+                    Value="{Binding TailCutSec, Mode=TwoWay}"
+                    TickFrequency="0.1" IsSnapToTickEnabled="True"
                     VerticalAlignment="Center"/>
-            <TextBlock Grid.Column="1" Text="{Binding MarginText}"
-                       VerticalAlignment="Center" Margin="4,0,0,0"/>
+            <TextBlock Grid.Column="1" Text="{Binding TailCutText}"
+                       VerticalAlignment="Center" Margin="4,0,0,0" FontSize="11"/>
         </Grid>
 
         <Button Content="整理を実行"

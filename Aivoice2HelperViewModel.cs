@@ -4,21 +4,13 @@ public class Aivoice2HelperViewModel : INotifyPropertyChanged
 {
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    double _thresholdDb = -40.0;
-    public double SilenceThresholdDb
+    double _tailCutSec = 0.3;
+    public double TailCutSec
     {
-        get => _thresholdDb;
-        set { _thresholdDb = value; OnPropertyChanged(); OnPropertyChanged(nameof(ThresholdText)); }
+        get => _tailCutSec;
+        set { _tailCutSec = value; OnPropertyChanged(); OnPropertyChanged(nameof(TailCutText)); }
     }
-    public string ThresholdText => $"{(int)_thresholdDb} dB";
-
-    double _marginMs = 500.0;
-    public double TailMarginMs
-    {
-        get => _marginMs;
-        set { _marginMs = value; OnPropertyChanged(); OnPropertyChanged(nameof(MarginText)); }
-    }
-    public string MarginText => $"{(int)_marginMs} ms";
+    public string TailCutText => $"{_tailCutSec:F1} s";
 
     string _resultText = "";
     public string ResultText
@@ -34,11 +26,7 @@ public class Aivoice2HelperViewModel : INotifyPropertyChanged
         ResultText = "処理中...";
         try
         {
-            var settings = new PluginSettings
-            {
-                SilenceThresholdDb = SilenceThresholdDb,
-                TailMarginSec      = TailMarginMs / 1000.0,
-            };
+            var settings = new PluginSettings { TailCutSec = TailCutSec };
             int count = ProcessCommand.Execute(settings);
             var diag     = ProcessCommand.LastDiagLog;
             var reloaded = ProcessCommand.AutoReloaded;

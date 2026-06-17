@@ -20,12 +20,11 @@ public static class ProcessCommand
         if (doc == null) { LastDiagLog = "JSONパース失敗"; return -1; }
 
         double fps = doc["VideoInfo"]?["FPS"]?.GetValue<double>() ?? 30.0;
-        log.AppendLine($"FPS: {fps}");
+        log.AppendLine($"FPS: {fps} / 末尾カット: {settings.TailCutSec:F1}s");
 
         var timelines = doc["Timelines"]?.AsArray();
         if (timelines == null) { LastDiagLog = log + "Timelinesキーなし"; return 0; }
 
-        // (item, 連番index, フレーム数)
         var entries = new List<(JsonObject Item, int Index, int LengthFrames)>();
         int totalItems = 0, wavItems = 0;
 
@@ -39,41 +38,31 @@ public static class ProcessCommand
                 if (item is not JsonObject obj) continue;
                 totalItems++;
 
-                bool diag = totalItems <= 3;
-
                 var (filePath, _) = FindWavPath(obj);
-                if (filePath == null)
-                {
-                    if (diag) log.AppendLine($"  [{totalItems}] WAVパス見つからず");
-                    continue;
-                }
+                if (filePath == null) continue;
                 wavItems++;
 
                 var parsed = FilenameParser.TryParse(filePath);
                 if (parsed == null)
                 {
-                    if (diag) log.AppendLine($"  [{wavItems}] ファイル名パース失敗: {Path.GetFileName(filePath)}");
+                    log.AppendLine($"  [{wavItems}] ファイル名パース失敗: {Path.GetFileName(filePath)}");
                     continue;
                 }
 
-                // 末尾無音カット: WAV 解析でフレーム数を決定
-                // ファイルが存在しない場合は YMM4 の元の Length を使う
                 int lengthFrames;
-                if (File.Exists(parsed.FullPath))
+                if (File.Exists(parsed.FullPath) && settings.TailCutSec > 0)
                 {
-                    var (trimSec, wavDiag) = WavSilenceTrimmer.GetTrimmedDuration(
-                        parsed.FullPath,
-                        thresholdDb:   settings.SilenceThresholdDb,
-                        tailMarginSec: settings.TailMarginSec);
-                    lengthFrames = (int)Math.Ceiling(trimSec * fps);
-                    if (lengthFrames <= 0) lengthFrames = 1;
-                    log.AppendLine($"  [{wavItems}] {Path.GetFileName(parsed.FullPath)}: {wavDiag} → {lengthFrames}fr");
+                    var (fullSec, diag) = WavSilenceTrimmer.GetFullDuration(parsed.FullPath);
+                    double trimSec = Math.Max(0.1, fullSec - settings.TailCutSec);
+                    lengthFrames = Math.Max(1, (int)Math.Ceiling(trimSec * fps));
+                    log.AppendLine($"  [{wavItems}] {Path.GetFileName(parsed.FullPath)}: {diag} cut={settings.TailCutSec:F1}s → {trimSec:F2}s ({lengthFrames}fr)");
                 }
                 else
                 {
+                    // TailCutSec=0 またはファイル不存在: YMM4の元のLengthを使用
                     lengthFrames = obj["Length"]?.GetValue<int>() ?? 1;
                     if (lengthFrames <= 0) lengthFrames = 1;
-                    log.AppendLine($"  [{wavItems}] {Path.GetFileName(parsed.FullPath)}: ファイル不存在 origLen={lengthFrames}fr");
+                    log.AppendLine($"  [{wavItems}] {Path.GetFileName(parsed.FullPath)}: origLen={lengthFrames}fr");
                 }
 
                 entries.Add((obj, parsed.Index, lengthFrames));

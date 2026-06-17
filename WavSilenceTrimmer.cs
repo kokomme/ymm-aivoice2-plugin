@@ -4,109 +4,21 @@ namespace YmmAivoice2Plugin;
 
 public static class WavSilenceTrimmer
 {
-    // thresholdDb: ピーク振幅に対する相対値 (例: -40 → ピークの1/100)
-    // 50ms窓のRMSで判定するため、1サンプルのリバーブスパイクに引っかからない
-    public static (double TrimmedSec, string Diag) GetTrimmedDuration(
-        string filePath,
-        double thresholdDb   = -40.0,
-        double tailMarginSec = 0.50)
+    // WAVファイルの全長を返す（末尾無音解析なし）
+    public static (double FullSec, string Diag) GetFullDuration(string filePath)
     {
         try
         {
             using var fs = File.OpenRead(filePath);
             if (!TryParseWavHeader(fs, out var sr, out var ch, out var bd, out var dl))
-            {
-                double fb = Fallback(filePath, sr, ch, bd);
-                return (fb, $"ヘッダ解析失敗 sr={sr} ch={ch} bit={bd} fallback={fb:F2}s");
-            }
+                return (Fallback(filePath), $"ヘッダ解析失敗 fallback使用");
 
-            var data = new byte[dl];
-            int read = 0, n;
-            while (read < dl && (n = fs.Read(data, read, dl - read)) > 0)
-                read += n;
-
-            int chs = Math.Max(1, ch);
-            int bps = bd / 8;
-            int totalFrames = read / (bps * chs);
-
-            long peak = FindPeak(data, read, bd);
-            if (peak <= 0)
-                return (totalFrames / (double)sr, $"ピーク=0 (無音ファイル)");
-
-            long absThreshold = Math.Max(1L, (long)(peak * Math.Pow(10.0, thresholdDb / 20.0)));
-
-            // 50ms窓のRMSで末尾から走査
-            int windowFrames = Math.Max(1, (int)(sr * 0.05));
-            int hopFrames    = Math.Max(1, windowFrames / 5); // 10ms刻み
-            int lastFrame    = FindLastActiveFrame(data, read, bd, chs, bps, totalFrames, absThreshold, windowFrames, hopFrames);
-
-            int marginFrames = (int)(sr * tailMarginSec);
-            int effective    = Math.Min(lastFrame + marginFrames, totalFrames);
-            double trimmed   = effective / (double)sr;
-            double full      = totalFrames / (double)sr;
-
-            return (trimmed,
-                $"sr={sr} ch={ch} bit={bd} peak={peak} thr={absThreshold} " +
-                $"full={full:F2}s trim={trimmed:F2}s (dB={thresholdDb} margin={tailMarginSec*1000:F0}ms)");
+            int bps   = bd / 8;
+            int chs   = Math.Max(1, ch);
+            double sec = dl / (double)(sr * bps * chs);
+            return (sec, $"sr={sr} ch={ch} bit={bd} full={sec:F2}s");
         }
         catch (Exception ex) { return (0.0, $"例外: {ex.Message}"); }
-    }
-
-    // 50msウィンドウのRMSをチェック。末尾から走査してRMS>閾値の最後の窓末端を返す
-    static int FindLastActiveFrame(
-        byte[] data, int byteCount, int bitDepth, int chs, int bps,
-        int totalFrames, long absThreshold, int windowFrames, int hopFrames)
-    {
-        for (int endFrame = totalFrames; endFrame >= windowFrames; endFrame -= hopFrames)
-        {
-            int startFrame = endFrame - windowFrames;
-            double sumSq   = 0;
-            int    count   = 0;
-
-            for (int f = startFrame; f < endFrame; f++)
-            {
-                for (int c = 0; c < chs; c++)
-                {
-                    int byteIdx = (f * chs + c) * bps;
-                    if (byteIdx + bps > byteCount) continue;
-                    long s = ReadSampleAbs(data, byteIdx, bitDepth);
-                    sumSq += (double)s * s;
-                    count++;
-                }
-            }
-
-            if (count > 0 && Math.Sqrt(sumSq / count) > absThreshold)
-                return endFrame;
-        }
-        return 0;
-    }
-
-    static long FindPeak(byte[] data, int byteCount, int bitDepth)
-    {
-        int bps = bitDepth / 8;
-        long peak = 0;
-        for (int i = 0; i + bps <= byteCount; i += bps)
-        {
-            long v = ReadSampleAbs(data, i, bitDepth);
-            if (v > peak) peak = v;
-        }
-        return peak;
-    }
-
-    static long ReadSampleAbs(byte[] data, int byteIdx, int bitDepth) => bitDepth switch
-    {
-        16 => Math.Abs((long)BinaryPrimitives.ReadInt16LittleEndian(data.AsSpan(byteIdx, 2))),
-        8  => Math.Abs(data[byteIdx] - 128),
-        24 => Math.Abs(ReadInt24(data, byteIdx)),
-        32 => (long)(Math.Abs(BitConverter.ToSingle(data, byteIdx)) * 1_000_000),
-        _  => 0
-    };
-
-    static long ReadInt24(byte[] data, int i)
-    {
-        int raw = data[i] | (data[i+1] << 8) | (data[i+2] << 16);
-        if ((raw & 0x800000) != 0) raw |= unchecked((int)0xFF000000);
-        return Math.Abs((long)raw);
     }
 
     static bool TryParseWavHeader(Stream s, out int sr, out int ch, out int bd, out int dl)
@@ -139,10 +51,9 @@ public static class WavSilenceTrimmer
         return false;
     }
 
-    static double Fallback(string path, int sr, int ch, int bd)
+    static double Fallback(string path)
     {
-        if (sr <= 0 || ch <= 0 || bd <= 0) return 0.0;
-        try { return Math.Max(0, new FileInfo(path).Length - 44) / (bd / 8.0) / ch / sr; }
+        try { return Math.Max(0, new FileInfo(path).Length - 44) / 2.0 / 48000.0; }
         catch { return 0.0; }
     }
 }
