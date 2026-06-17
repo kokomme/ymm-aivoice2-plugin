@@ -10,17 +10,24 @@ public static class WavSilenceTrimmer
         double tailMarginSec = 0.05)
         => GetTrimmedDurationSecWithDiag(filePath, silenceThresholdDb, tailMarginSec).TrimmedSec;
 
-    public static double GetFullDurationSec(string filePath)
+    public static (double DurationSec, string Diag) GetFullDurationSecWithDiag(string filePath)
     {
         try
         {
             using var fs = File.OpenRead(filePath);
-            if (!TryParseWavHeader(fs, out var sr, out var ch, out var bd, out var dl, out _))
-                return Fallback(filePath, sr, ch, bd);
-            return dl / (bd / 8.0) / Math.Max(1, ch) / sr;
+            if (!TryParseWavHeader(fs, out var sr, out var ch, out var bd, out var dl, out var fmt))
+            {
+                var fb = Fallback(filePath, sr, ch, bd);
+                return (fb, $"ヘッダ解析失敗→fallback={fb:F2}s sr={sr} ch={ch} bit={bd}");
+            }
+            double dur = dl / (bd / 8.0) / Math.Max(1, ch) / sr;
+            return (dur, $"fmt={fmt} sr={sr} ch={ch} bit={bd} data={dl}B full={dur:F2}s");
         }
-        catch { return 0.0; }
+        catch (Exception ex) { return (0.0, $"例外: {ex.Message}"); }
     }
+
+    public static double GetFullDurationSec(string filePath)
+        => GetFullDurationSecWithDiag(filePath).DurationSec;
 
     public static (double TrimmedSec, double FullSec, string Diag) GetTrimmedDurationSecWithDiag(
         string filePath,

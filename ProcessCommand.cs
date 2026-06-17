@@ -91,10 +91,14 @@ public static class ProcessCommand
                         silenceThresholdDb: settings.SilenceThresholdDb,
                         tailMarginSec: settings.TailMarginSec);
                     trimmedSec = ts;
-                    if (diag || wavItems <= 3) log.AppendLine($"      [{wavItems}] {Path.GetFileName(parsed.FullPath)}: {wavDiag}");
+                    log.AppendLine($"      [{wavItems}] {Path.GetFileName(parsed.FullPath)}: {wavDiag}");
                 }
                 else
-                    trimmedSec = WavSilenceTrimmer.GetFullDurationSec(parsed.FullPath);
+                {
+                    var (dur, fullDiag) = WavSilenceTrimmer.GetFullDurationSecWithDiag(parsed.FullPath);
+                    trimmedSec = dur;
+                    log.AppendLine($"      [{wavItems}] {Path.GetFileName(parsed.FullPath)}: {fullDiag}");
+                }
 
                 entries.Add((obj, parsed, trimmedSec));
             }
