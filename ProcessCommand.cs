@@ -23,10 +23,13 @@ public static class ProcessCommand
         if (timelines == null) { LastDiagLog = "Timelinesキーなし"; return 0; }
 
         // アイテムのVoiceLength+AdditionalTime+Lengthから内部FPSを検出
-        double internalFps = DetectInternalFps(timelines);
-        log.AppendLine($"内部FPS: {internalFps} / 末尾カット: {settings.TailCutSec:F1}s");
+        double internalFps = DetectInternalFps(timelines, out string fpsDiag);
+        log.AppendLine($"内部FPS: {internalFps} ({fpsDiag}) / 末尾カット: {settings.TailCutSec:F1}s");
 
-        var entries = new List<(JsonObject Item, int Index, int LengthFrames)>();
+        // WAVパス → 全JsonObjectのリスト (重複タイムライン対応)
+        var wavToObjs = new Dictionary<string, List<JsonObject>>(StringComparer.OrdinalIgnoreCase);
+        // 順序計算用: WAVパスを初見順に1件だけ登録
+        var entries   = new List<(string WavPath, int Index, int LengthFrames)>();
         int totalItems = 0, wavItems = 0;
 
         foreach (var timeline in timelines)
@@ -43,10 +46,18 @@ public static class ProcessCommand
                 if (filePath == null) continue;
                 wavItems++;
 
+                // 全コピーを記録 (重複対応)
+                if (!wavToObjs.TryGetValue(filePath, out var objList))
+                    wavToObjs[filePath] = objList = new List<JsonObject>();
+                objList.Add(obj);
+
+                // 初見のみ順序リストに追加
+                if (objList.Count > 1) continue;
+
                 var parsed = FilenameParser.TryParse(filePath);
                 if (parsed == null)
                 {
-                    log.AppendLine($"  [{wavItems}] ファイル名パース失敗: {Path.GetFileName(filePath)}");
+                    log.AppendLine($"  [skip] ファイル名パース失敗: {Path.GetFileName(filePath)}");
                     continue;
                 }
 
@@ -54,13 +65,16 @@ public static class ProcessCommand
                 // (VoiceLength/AdditionalTimeは本プラグインが変更しないため常に正確)
                 int newLength = ComputeLength(obj, settings.TailCutSec, internalFps,
                                               out string lenDiag);
-                log.AppendLine($"  [{wavItems}] {Path.GetFileName(parsed.FullPath)}: {lenDiag}");
+                log.AppendLine($"  [{entries.Count + 1}] {Path.GetFileName(parsed.FullPath)}: {lenDiag}");
 
-                entries.Add((obj, parsed.Index, newLength));
+                entries.Add((filePath, parsed.Index, newLength));
             }
         }
 
-        log.AppendLine($"全アイテム: {totalItems}件 / WAV: {wavItems}件 / 対象: {entries.Count}件");
+        int uniqueWav = wavToObjs.Count;
+        int dupObjs   = wavItems - uniqueWav;
+        log.AppendLine($"全アイテム: {totalItems}件 / WAV: {wavItems}件 / ユニーク: {uniqueWav}件" +
+                       (dupObjs > 0 ? $" (重複{dupObjs}件 → 同位置に更新)" : ""));
 
         if (entries.Count == 0)
         {
@@ -71,11 +85,29 @@ public static class ProcessCommand
         File.Copy(ymmpPath, ymmpPath + ".bak", overwrite: true);
 
         var sorted = entries.OrderBy(e => e.Index).ToList();
-        long cursor = 0;
-        foreach (var (item, _, frameCount) in sorted)
+
+        // キャラ名 → Layer番号 (初登場順に 1, 2, 3...)
+        var charLayer = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var (wavPath, _, _) in sorted)
         {
-            item["Frame"]  = JsonValue.Create((int)cursor);
-            item["Length"] = JsonValue.Create(frameCount);
+            var ch = FilenameParser.TryParse(wavPath)?.CharacterName ?? "";
+            if (!charLayer.ContainsKey(ch))
+                charLayer[ch] = charLayer.Count + 1;
+        }
+        log.AppendLine("レイヤー割り当て: " +
+            string.Join(", ", charLayer.Select(kv => $"{kv.Key}→L{kv.Value}")));
+
+        long cursor = 0;
+        foreach (var (wavPath, _, frameCount) in sorted)
+        {
+            var ch    = FilenameParser.TryParse(wavPath)?.CharacterName ?? "";
+            int layer = charLayer.TryGetValue(ch, out int l) ? l : 1;
+            foreach (var obj in wavToObjs[wavPath])
+            {
+                obj["Frame"]  = JsonValue.Create((int)cursor);
+                obj["Length"] = JsonValue.Create(frameCount);
+                obj["Layer"]  = JsonValue.Create(layer);
+            }
             cursor += frameCount;
         }
 
@@ -99,10 +131,21 @@ public static class ProcessCommand
     }
 
     // アイテムのVoiceLength・AdditionalTime・Lengthから実際の内部FPSを推定
-    static double DetectInternalFps(JsonArray timelines)
+    // 注: プラグインがLengthを短縮済みのアイテムは実FPSより低い値を示す
+    //     → 全アイテムの implied FPS のうち最大値が真のFPSに最も近い
+    static double DetectInternalFps(JsonArray timelines, out string diag)
     {
+        var candidates = new List<double>();
+
         foreach (var timeline in timelines)
         {
+            // タイムラインレベルにFPSが直接あれば優先使用
+            if (timeline?["FPS"]?.GetValue<double>() is double tFps && tFps > 0)
+            {
+                diag = $"Timeline.FPS={tFps}";
+                return tFps;
+            }
+
             foreach (var item in timeline?["Items"]?.AsArray() ?? new JsonArray())
             {
                 if (item is not JsonObject obj) continue;
@@ -115,10 +158,20 @@ public static class ProcessCommand
                 if (total <= 0) continue;
                 var implied = origLen / total;
                 if (implied >= 20 && implied <= 300)
-                    return Math.Round(implied); // 60.19 → 60
+                    candidates.Add(implied);
             }
         }
-        return 30.0; // フォールバック
+
+        if (candidates.Count > 0)
+        {
+            var max = candidates.Max();
+            var rounded = Math.Round(max);
+            diag = $"候補=[{string.Join(", ", candidates.Select(c => $"{c:F1}"))}] 最大={max:F2} → {rounded}";
+            return rounded;
+        }
+
+        diag = "検出失敗 → 30フォールバック";
+        return 30.0;
     }
 
     // VoiceLength + AdditionalTime を使って新しいLengthを計算

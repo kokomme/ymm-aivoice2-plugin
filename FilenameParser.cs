@@ -11,7 +11,9 @@ public sealed record ParsedVoiceFile(
 public static class FilenameParser
 {
     // 先頭が3桁数字+アンダースコアなら対象（AIVOICE2連番形式）
-    static readonly Regex IndexPattern = new(@"^(\d{3,4})_", RegexOptions.Compiled);
+    // "001_音街ウナ (NV)_こんいちは.wav" → Index=1, CharacterName="音街ウナ (NV)", TextHint="こんいちは"
+    static readonly Regex FullPattern  = new(@"^(\d{3,4})_([^_]+)_(.+)\.wav$",    RegexOptions.Compiled);
+    static readonly Regex IndexPattern = new(@"^(\d{3,4})_",                        RegexOptions.Compiled);
 
     public static ParsedVoiceFile? TryParse(string filePath)
     {
@@ -22,14 +24,24 @@ public static class FilenameParser
         var name = Path.GetFileName(filePath).Trim();
         if (string.IsNullOrEmpty(name)) return null;
 
-        var m = IndexPattern.Match(name);
-        if (!m.Success) return null;
+        // フルパターン（連番_キャラ名_セリフ.wav）
+        var m = FullPattern.Match(name);
+        if (m.Success)
+            return new ParsedVoiceFile(
+                Index:         int.Parse(m.Groups[1].Value),
+                CharacterName: m.Groups[2].Value.Trim(),
+                TextHint:      m.Groups[3].Value,
+                FullPath:      filePath);
+
+        // キャラ名なし（連番_*.wav 形式）
+        var m2 = IndexPattern.Match(name);
+        if (!m2.Success) return null;
 
         return new ParsedVoiceFile(
-            Index: int.Parse(m.Groups[1].Value),
+            Index:         int.Parse(m2.Groups[1].Value),
             CharacterName: "",
-            TextHint: name,
-            FullPath: filePath);
+            TextHint:      name,
+            FullPath:      filePath);
     }
 
     public static bool IsMatch(string filePath) => TryParse(filePath) is not null;

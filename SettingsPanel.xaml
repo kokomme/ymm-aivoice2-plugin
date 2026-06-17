@@ -5,7 +5,7 @@
 
     <StackPanel Margin="8" VerticalAlignment="Top">
 
-        <TextBlock Text="AIVOICE2 Helper  v0.6.8" FontWeight="Bold" FontSize="13" Margin="0,0,0,8"/>
+        <TextBlock Text="AIVOICE2 Helper  v0.6.9" FontWeight="Bold" FontSize="13" Margin="0,0,0,8"/>
 
         <!-- 末尾カット秒数 -->
         <TextBlock Text="末尾カット (秒)" Margin="0,0,0,2" FontSize="11"/>
