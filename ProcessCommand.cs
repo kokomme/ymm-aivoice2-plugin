@@ -22,6 +22,13 @@ public static class ProcessCommand
         double fps = doc["VideoInfo"]?["FPS"]?.GetValue<double>() ?? 30.0;
         log.AppendLine($"FPS: {fps} / 末尾カット: {settings.TailCutSec:F1}s");
 
+        // YMMPルートキー一覧（構造把握用）
+        if (doc is JsonObject rootDoc)
+        {
+            var keys = string.Join(", ", rootDoc.Select(kv => kv.Key));
+            log.AppendLine($"[YMMP root keys] {keys}");
+        }
+
         var timelines = doc["Timelines"]?.AsArray();
         if (timelines == null) { LastDiagLog = log + "Timelinesキーなし"; return 0; }
 
@@ -48,6 +55,10 @@ public static class ProcessCommand
                     log.AppendLine($"  [{wavItems}] ファイル名パース失敗: {Path.GetFileName(filePath)}");
                     continue;
                 }
+
+                // アイテムの全フィールドをダンプ（音声制御フィールド特定用）
+                log.AppendLine($"  [{wavItems}] [全フィールド] {string.Join(", ", obj.Select(kv => $"{kv.Key}={kv.Value}"))}");
+
 
                 int lengthFrames;
                 if (File.Exists(parsed.FullPath))
