@@ -19,16 +19,14 @@ public class Aivoice2HelperViewModel : INotifyPropertyChanged
         try
         {
             int count    = ProcessCommand.Execute();
-            var diag     = ProcessCommand.LastDiagLog;
             var reloaded = ProcessCommand.AutoReloaded;
-            var diagBlock = string.IsNullOrEmpty(diag) ? "" : $"\n[診断]\n{diag}";
             ResultText = count switch
             {
-                < 0 => $"プロジェクトファイルが見つかりませんでした。\nYMM4でプロジェクトを開いて保存してください。{diagBlock}",
-                0   => $"対象アイテムが見つかりませんでした。\n・プロジェクトを保存しましたか？\n・タイムラインにWAVは配置されていますか？{diagBlock}",
-                _   => (reloaded
+                < 0 => "プロジェクトファイルが見つかりませんでした。\nYMM4でプロジェクトを開いて保存してください。",
+                0   => "対象アイテムが見つかりませんでした。\n・プロジェクトを保存しましたか？\n・タイムラインにWAVは配置されていますか？",
+                _   => reloaded
                     ? $"{count} 件を整理しました。（自動再読み込み済み）"
-                    : $"{count} 件を整理しました。\nYMM4でプロジェクトを再読み込みしてください。") + diagBlock
+                    : $"{count} 件を整理しました。\nYMM4でプロジェクトを再読み込みしてください。"
             };
         }
         catch (Exception ex) { ResultText = $"エラー: {ex.Message}"; }
